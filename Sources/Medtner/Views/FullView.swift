@@ -81,10 +81,17 @@ struct FullView: View {
     @Bindable var player: Player
     @State private var controlsVisible = false
     @State private var hideTask: Task<Void, Never>?
+    @State private var searchOpen = false
+    @State private var hoverTag: HoverTag?
+    @State private var scrub: Double?
+    @FocusState private var searchFocused: Bool
+
+    private var pinned: Bool { searchOpen || player.opened != nil || scrub != nil }
 
     var body: some View {
         GeometryReader { geo in
             let side = min(geo.size.width, geo.size.height)
+            let margin = side * 0.06
             ZStack(alignment: .bottomLeading) {
                 Color(red: 0.035, green: 0.035, blue: 0.04)
 
@@ -96,15 +103,24 @@ struct FullView: View {
 
                 clock
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-                    .padding(side * 0.06)
+                    .padding(margin)
 
                 placard(side: side)
-                    .padding(side * 0.06)
+                    .padding(margin)
 
                 upNext
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(side * 0.06)
+                    .padding(margin)
+                    .opacity(controlsVisible ? 0 : 1)
 
+                library
+                    .padding(.top, margin + 80)
+                    .padding(.trailing, margin - 12)
+                    .padding(.bottom, margin)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .opacity(controlsVisible ? 1 : 0)
+                    .offset(x: controlsVisible ? 0 : 24)
+                    .allowsHitTesting(controlsVisible)
             }
             .contentShape(Rectangle())
             .onContinuousHover { phase in
@@ -114,7 +130,56 @@ struct FullView: View {
         .ignoresSafeArea()
         .foregroundStyle(.white)
         .task(id: player.track?.uri) { await player.loadUpNext() }
+        .onReceive(NotificationCenter.default.publisher(for: .medtnerSearch)) { _ in openSearch() }
+        .onChange(of: pinned) { _, isPinned in if !isPinned { reveal() } }
         .onDisappear { NSCursor.setHiddenUntilMouseMoves(false) }
+    }
+
+    private var library: some View {
+        HStack(alignment: .top, spacing: 28) {
+            VStack(alignment: .trailing, spacing: 10) {
+                Button {
+                    searchOpen ? closeSearch() : openSearch()
+                } label: {
+                    Magnifier()
+                        .frame(width: 24, height: 24)
+                        .padding(8)
+                        .rotationEffect(.degrees(searchOpen ? -90 : 0))
+                        .foregroundStyle(searchOpen ? player.accentColor : Color.white.opacity(0.85))
+                }
+                .buttonStyle(PressStyle())
+
+                ZStack(alignment: .topTrailing) {
+                    if let opened = player.opened, !searchOpen {
+                        CollectionPanel(player: player, collection: opened)
+                            .id(opened.tile.id)
+                            .transition(.asymmetric(insertion: .offset(x: 40).combined(with: .opacity), removal: .opacity))
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        SearchField(player: player, focused: $searchFocused) { closeSearch() }
+                        SearchResults(player: player) { closeSearch() }
+                    }
+                    .opacity(searchOpen ? 1 : 0)
+                    .offset(y: searchOpen ? 0 : -12)
+                    .allowsHitTesting(searchOpen)
+                    .disabled(!searchOpen)
+                }
+                .frame(width: 400)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .padding(18)
+                .background(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.black.opacity(searchOpen || player.opened != nil ? 0.45 : 0))
+                )
+
+                if !searchOpen && player.opened == nil {
+                    ShelfTabs(player: player)
+                }
+            }
+
+            ShelfColumn(player: player, hoverTag: $hoverTag)
+                .frame(width: Layout.tile + 24)
+        }
     }
 
     private var clock: some View {
@@ -133,6 +198,7 @@ struct FullView: View {
                 .id(player.artURL600)
                 .transition(.opacity.combined(with: .scale(scale: 0.94)))
                 .shadow(color: .black.opacity(0.45), radius: 24, y: 10)
+                .trackMenu(player.track?.uri, player: player)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text(player.track?.name ?? "Medtner")
@@ -148,26 +214,55 @@ struct FullView: View {
                     .id("fa-" + subtitle)
                     .transition(TextReveal())
                 HStack(spacing: 14) {
-                    LineProgress(fraction: player.fraction(), playing: player.isPlaying, durationMs: player.durationMs)
-                        .frame(width: side * 0.3, height: 2)
-                        .clipShape(Capsule())
+                    progress(width: side * 0.3)
                     let _ = player.progressEpoch
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text("\(formatTime(player.position())) / \(formatTime(player.durationMs))")
+                        let shown = scrub.map { Int(Double(player.durationMs) * $0) } ?? player.position()
+                        Text("\(formatTime(shown)) / \(formatTime(player.durationMs))")
                             .font(.system(size: 13, weight: .medium).monospacedDigit())
                             .foregroundStyle(.white.opacity(0.5))
                     }
                 }
                 .padding(.top, 10)
 
-                Transport(player: player, size: 20, spacing: 30, extras: true)
-                    .padding(.top, 18)
-                    .opacity(controlsVisible ? 1 : 0)
-                    .offset(y: controlsVisible ? 0 : 6)
-                    .allowsHitTesting(controlsVisible)
+                HStack(spacing: 36) {
+                    Transport(player: player, size: 20, spacing: 30, extras: true)
+                    VolumeBar(player: player, width: 150)
+                }
+                .padding(.top, 18)
+                .opacity(controlsVisible ? 1 : 0)
+                .offset(y: controlsVisible ? 0 : 6)
+                .allowsHitTesting(controlsVisible)
             }
             .frame(maxWidth: side * 0.9, alignment: .leading)
         }
+    }
+
+    private func progress(width: CGFloat) -> some View {
+        let thick: CGFloat = controlsVisible ? 5 : 2
+        return ZStack(alignment: .leading) {
+            LineProgress(fraction: player.fraction(), playing: player.isPlaying, durationMs: player.durationMs)
+                .opacity(scrub == nil ? 1 : 0)
+            if let scrub {
+                Capsule().fill(Color.white.opacity(0.14))
+                Capsule().fill(Color.white.opacity(0.9))
+                    .frame(width: max(thick, width * CGFloat(scrub)))
+            }
+        }
+        .frame(width: width, height: thick)
+        .clipShape(Capsule())
+        .frame(height: 16)
+        .contentShape(Rectangle())
+        .pointerStyle(.link)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { scrub = min(max($0.location.x / width, 0), 1) }
+                .onEnded { value in
+                    player.seek(to: min(max(value.location.x / width, 0), 1))
+                    scrub = nil
+                }
+        )
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: thick)
     }
 
     private var subtitle: String {
@@ -204,6 +299,23 @@ struct FullView: View {
         .animation(.easeOut(duration: 0.4), value: player.upNext.map(\.id))
     }
 
+    private func openSearch() {
+        player.closeCollection()
+        reveal()
+        withAnimation(.snappy(duration: 0.2)) { searchOpen = true }
+        player.searching = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            if searchOpen { searchFocused = true }
+        }
+    }
+
+    private func closeSearch() {
+        withAnimation(.snappy(duration: 0.2)) { searchOpen = false }
+        player.searching = false
+        searchFocused = false
+        player.search("")
+    }
+
     private func reveal() {
         NSCursor.setHiddenUntilMouseMoves(false)
         if !controlsVisible {
@@ -211,8 +323,8 @@ struct FullView: View {
         }
         hideTask?.cancel()
         hideTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, !pinned else { return }
             withAnimation(.easeIn(duration: 0.5)) { controlsVisible = false }
             NSCursor.setHiddenUntilMouseMoves(true)
         }
