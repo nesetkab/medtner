@@ -55,7 +55,8 @@ struct PlayerView: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             TrackHeading(player: player)
-                .frame(width: 400, height: 92, alignment: .topLeading)
+                .frame(width: searchOpen ? cover + 20 : 400, height: 92, alignment: .topLeading)
+                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen)
                 .frame(width: cover, alignment: .leading)
 
             ZStack(alignment: .leading) {
@@ -82,8 +83,8 @@ struct PlayerView: View {
 
             Spacer(minLength: 16)
 
-            VolumeBar(player: player)
-                .padding(.bottom, 16)
+            VolumeBar(player: player, width: cover - 36)
+                .padding(.bottom, 20)
 
             Transport(player: player)
         }
@@ -113,7 +114,7 @@ struct PlayerView: View {
                         SearchField(player: player, focused: $searchFocused) { closeSearch() }
                         SearchResults(player: player) { closeSearch() }
                     }
-                    .padding(.top, 42)
+                    .padding(.top, 6)
                     .transition(.asymmetric(insertion: .offset(y: -12).combined(with: .opacity), removal: .opacity))
                 }
             }

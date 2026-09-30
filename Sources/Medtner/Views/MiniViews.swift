@@ -76,7 +76,7 @@ struct PillView: View {
                 .transition(.push(from: .bottom))
                 Spacer(minLength: 6)
                 if expanded {
-                    Transport(player: player, size: 14, spacing: 12)
+                    Transport(player: player, size: 13, spacing: 16)
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 } else {
                     EqualizerBars(playing: player.isPlaying, color: player.accentColor)

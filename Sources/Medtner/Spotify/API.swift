@@ -35,6 +35,10 @@ struct API {
         return response?.items ?? []
     }
 
+    func me() async throws -> Me? {
+        try await get("me")
+    }
+
     func playlists() async throws -> [Playlist] {
         let response: Paged<Playlist>? = try await get("me/playlists", query: ["limit": "40"])
         return response?.items.compactMap { $0 } ?? []

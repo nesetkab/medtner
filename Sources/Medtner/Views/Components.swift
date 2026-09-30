@@ -5,7 +5,7 @@ struct PressStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .contentShape(Rectangle())
+            .contentShape(Rectangle().inset(by: -8))
             .scaleEffect(configuration.isPressed ? scale : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
     }
@@ -119,31 +119,28 @@ struct Soft<S: Shape>: View {
 
 struct Transport: View {
     @Bindable var player: Player
-    var size: CGFloat = 24
-    var spacing: CGFloat = 22
+    var size: CGFloat = 18
+    var spacing: CGFloat = 24
 
     var body: some View {
         HStack(spacing: spacing) {
             Button { player.previous() } label: {
                 Soft(shape: SkipShape(forward: false), corner: size * 0.08)
-                    .frame(width: size * 0.78, height: size * 0.72)
-                    .padding(6)
+                    .frame(width: size * 0.95, height: size * 0.9)
             }
             Button { player.togglePlay() } label: {
                 Soft(shape: PlayPauseShape(progress: player.isPlaying ? 1 : 0), corner: size * 0.09)
                     .frame(width: size * 0.9, height: size)
                     .animation(.spring(response: 0.35, dampingFraction: 0.7), value: player.isPlaying)
-                    .padding(6)
             }
             Button { player.next() } label: {
                 Soft(shape: SkipShape(forward: true), corner: size * 0.08)
-                    .frame(width: size * 0.78, height: size * 0.72)
-                    .padding(6)
+                    .frame(width: size * 0.95, height: size * 0.9)
             }
         }
+        .frame(height: size)
         .buttonStyle(PressStyle())
         .foregroundStyle(.white)
-        .padding(.horizontal, -6)
     }
 }
 
@@ -154,22 +151,22 @@ struct VolumeBar: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             Button {
                 player.setVolume(player.volume > 0 ? 0 : 60)
             } label: {
                 Image(systemName: "speaker.wave.3.fill", variableValue: Double(player.volume) / 100)
-                    .font(.system(size: 17, weight: .medium))
-                    .frame(width: 32, alignment: .leading)
+                    .font(.system(size: 15, weight: .medium))
+                    .frame(width: 24, height: 18, alignment: .leading)
                     .contentTransition(.symbolEffect(.automatic))
             }
             .buttonStyle(PressStyle())
 
             GeometryReader { geo in
                 let fraction = CGFloat(player.volume) / 100
-                let thick: CGFloat = dragging || hovering ? 10 : 7
+                let thick: CGFloat = dragging || hovering ? 8 : 6
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Color(white: 0.55)).frame(height: 2)
+                    Capsule().fill(Color(white: 0.3)).frame(height: thick)
                     Capsule().fill(.white)
                         .frame(width: max(thick, geo.size.width * fraction), height: thick)
                 }

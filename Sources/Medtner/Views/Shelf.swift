@@ -63,7 +63,19 @@ struct ShelfTile: View {
     var body: some View {
         GeometryReader { geo in
             Button(action: action) {
-                Art(url: tile.art, radius: 18)
+                Group {
+                    if let symbol = tile.symbol {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(accent)
+                            .overlay {
+                                Image(systemName: symbol)
+                                    .font(.system(size: 30, weight: .semibold))
+                                    .foregroundStyle(.black.opacity(0.75))
+                            }
+                    } else {
+                        Art(url: tile.art, radius: 18)
+                    }
+                }
                     .overlay {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .strokeBorder(accent, lineWidth: hovering ? 3 : 0)

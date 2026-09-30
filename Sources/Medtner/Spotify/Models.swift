@@ -120,4 +120,9 @@ struct Tile: Identifiable, Hashable {
     let art: URL?
     let playURI: String
     let contextURI: String?
+    var symbol: String? = nil
+}
+
+struct Me: Codable {
+    let id: String
 }

@@ -68,6 +68,7 @@ final class Player {
     @ObservationIgnored private var holdUntil = Date.distantPast
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
     @ObservationIgnored private var artURL: URL?
+    @ObservationIgnored private var userID: String?
 
     var shelf: [Tile] {
         switch shelfMode {
@@ -424,10 +425,18 @@ final class Player {
             }
         case .playlists:
             guard let lists = try? await api.playlists() else { return }
-            playlists = lists.map {
+            if userID == nil { userID = try? await api.me()?.id }
+            var tiles: [Tile] = []
+            if let userID {
+                let liked = "spotify:user:\(userID):collection"
+                tiles.append(Tile(id: liked, title: "Liked Songs", subtitle: "Your library", art: nil,
+                                  playURI: liked, contextURI: liked, symbol: "heart.fill"))
+            }
+            tiles += lists.map {
                 Tile(id: $0.uri, title: $0.name, subtitle: $0.owner?.display_name ?? "",
                      art: ($0.images ?? []).best(near: 200), playURI: $0.uri, contextURI: $0.uri)
             }
+            playlists = tiles
         }
     }
 
