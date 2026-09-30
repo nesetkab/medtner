@@ -1,6 +1,6 @@
 # Medtner, a lightweight Spotify player
 
-![an image of medtner](image.png)
+![an image of medtner](screenshot.png)
 
 medtner was made to increase performance times while still giving you all the features you need. 
 it has:
