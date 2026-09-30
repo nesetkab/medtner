@@ -19,6 +19,7 @@ final class Engine {
     var onChange: ((State) -> Void)?
     var onLoginURL: ((URL) -> Void)?
 
+    let audio = AudioOut()
     private var process: Process?
     private var restarts = 0
     private var startedAt = Date()
@@ -44,7 +45,7 @@ final class Engine {
         killStale()
 
         let cache = Storage.directory.appendingPathComponent("engine", isDirectory: true)
-        let audio = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let audioCache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Medtner/audio", isDirectory: true)
         let volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
 
@@ -53,11 +54,13 @@ final class Engine {
             "--device-type", "computer",
             "--bitrate", "320",
             "--system-cache", cache.path,
-            "--cache", audio.path,
+            "--cache", audioCache.path,
             "--cache-size-limit", "512M",
             "--disable-discovery",
             "--initial-volume", String(volume),
-            "--volume-ctrl", "cubic",
+            "--volume-ctrl", "fixed",
+            "--backend", "pipe",
+            "--format", "S16",
             "--enable-volume-normalisation",
             "--autoplay", "on",
             "--quiet",
@@ -77,8 +80,20 @@ final class Engine {
         env["MEDTNER_HOOK"] = "1"
         process.environment = env
 
+        var fds: [Int32] = [0, 0]
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0 else {
+            state = .missing
+            return
+        }
+        var size: Int32 = 8_192
+        setsockopt(fds[1], SOL_SOCKET, SO_SNDBUF, &size, socklen_t(MemoryLayout<Int32>.size))
+        setsockopt(fds[0], SOL_SOCKET, SO_RCVBUF, &size, socklen_t(MemoryLayout<Int32>.size))
+        let audioWrite = FileHandle(fileDescriptor: fds[1], closeOnDealloc: true)
+        let audioRead = FileHandle(fileDescriptor: fds[0], closeOnDealloc: true)
+        audio.setVolume(volume)
+
         let pipe = Pipe()
-        process.standardOutput = pipe
+        process.standardOutput = audioWrite
         process.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
@@ -92,6 +107,8 @@ final class Engine {
 
         do {
             try process.run()
+            try? audioWrite.close()
+            audio.stream(from: audioRead)
             self.process = process
             startedAt = Date()
             try? String(process.processIdentifier).write(to: pidFile, atomically: true, encoding: .utf8)
@@ -161,7 +178,7 @@ final class Engine {
         guard let event = env["PLAYER_EVENT"] else { return true }
         DistributedNotificationCenter.default().postNotificationName(
             eventNotification,
-            object: event,
+            object: event + "|" + (env["VOLUME"] ?? ""),
             userInfo: nil,
             deliverImmediately: true
         )

@@ -20,17 +20,11 @@ struct RootView: View {
     }
 }
 
-final class PillPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let player = Player.shared
     private var window: NSWindow!
     private var status: StatusItemController!
-    private var pill: PillPanel?
     private var keyMonitor: Any?
     private var windowVisible = false { didSet { updateSurfaces() } }
 
@@ -44,7 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         installKeys()
         player.boot()
         window.makeKeyAndOrderFront(nil)
-        if UserDefaults.standard.bool(forKey: "pill") { togglePill() }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -93,65 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func updateSurfaces() {
-        player.visibleSurfaces = (windowVisible ? 1 : 0) + (status?.isOpen == true ? 1 : 0) + (pill != nil ? 1 : 0)
-    }
-
-    @objc func togglePill() {
-        if let pill {
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.2
-                pill.animator().alphaValue = 0
-            }, completionHandler: { [weak self] in
-                Task { @MainActor in
-                    self?.pill?.orderOut(nil)
-                    self?.pill = nil
-                    self?.updateSurfaces()
-                }
-            })
-            UserDefaults.standard.set(false, forKey: "pill")
-            return
-        }
-        let size = NSSize(width: 380, height: 150)
-        let panel = PillPanel(
-            contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered, defer: false
-        )
-        panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.isMovableByWindowBackground = false
-        panel.hidesOnDeactivate = false
-        let host = NSHostingView(rootView: PillView(player: player).preferredColorScheme(.dark))
-        host.frame = NSRect(origin: .zero, size: size)
-        panel.contentView = host
-        if let screen = NSScreen.main {
-            let frame = screen.frame
-            let top = screen.visibleFrame.maxY
-            panel.setFrameOrigin(NSPoint(x: frame.midX - size.width / 2, y: top - size.height - 6))
-        }
-        panel.alphaValue = 0
-        panel.orderFrontRegardless()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.25
-            panel.animator().alphaValue = 1
-        }
-        pill = panel
-        UserDefaults.standard.set(true, forKey: "pill")
-        updateSurfaces()
-    }
-
-    @objc func toggleTicker() {
-        let current = UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true
-        UserDefaults.standard.set(!current, forKey: "ticker")
-        status.render()
-    }
-
-    @objc func toggleVinyl() {
-        showWindow()
-        NotificationCenter.default.post(name: .medtnerVinyl, object: nil)
+        player.visibleSurfaces = (windowVisible ? 1 : 0) + (status?.isOpen == true ? 1 : 0)
     }
 
     @objc func openSearch() {
@@ -196,8 +131,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         items.append(.separator())
 
         add("Open Medtner", #selector(openWindowAction), key: "0")
-        add("Pill Mode", #selector(togglePill), on: pill != nil)
-        add("Scrolling Title", #selector(toggleTicker), on: UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true)
         items.append(.separator())
         add("Sign Out", #selector(signOut))
         let quit = NSMenuItem(title: "Quit Medtner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -231,17 +164,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         editItem.submenu = edit
         main.addItem(editItem)
 
-        let viewItem = NSMenuItem()
-        let view = NSMenu(title: "View")
-        let vinyl = view.addItem(withTitle: "Vinyl", action: #selector(toggleVinyl), keyEquivalent: "r")
-        vinyl.keyEquivalentModifierMask = [.command, .shift]
-        let pillItem = view.addItem(withTitle: "Pill Mode", action: #selector(togglePill), keyEquivalent: "p")
-        pillItem.keyEquivalentModifierMask = [.command, .shift]
-        view.addItem(withTitle: "Scrolling Title in Menu Bar", action: #selector(toggleTicker), keyEquivalent: "")
-        for item in view.items { item.target = self }
-        viewItem.submenu = view
-        main.addItem(viewItem)
-
         let windowItem = NSMenuItem()
         let windowMenu = NSMenu(title: "Window")
         windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
@@ -270,8 +192,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             default:
                 switch event.charactersIgnoringModifiers {
                 case "/": self.openSearch()
-                case "v": self.toggleVinyl()
-                case "p": self.togglePill()
                 case "s": self.player.toggleShuffle()
                 default: return event
                 }

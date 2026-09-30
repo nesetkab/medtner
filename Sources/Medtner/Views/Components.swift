@@ -122,9 +122,26 @@ struct Transport: View {
     @Bindable var player: Player
     var size: CGFloat = 18
     var spacing: CGFloat = 24
+    var extras = false
 
     var body: some View {
         HStack(spacing: spacing) {
+            if extras {
+                Button { player.toggleShuffle() } label: {
+                    Image(systemName: "shuffle")
+                        .font(.system(size: size * 0.8, weight: .semibold))
+                        .foregroundStyle(player.shuffle ? player.accentColor : Palette.muted)
+                        .overlay(alignment: .bottom) {
+                            Circle()
+                                .fill(player.accentColor)
+                                .frame(width: 4, height: 4)
+                                .offset(y: 8)
+                                .opacity(player.shuffle ? 1 : 0)
+                        }
+                        .frame(height: size)
+                }
+                .help("Shuffle")
+            }
             Button { player.previous() } label: {
                 Soft(shape: SkipShape(forward: false), corner: size * 0.08)
                     .frame(width: size * 0.95, height: size * 0.9)
@@ -138,10 +155,120 @@ struct Transport: View {
                 Soft(shape: SkipShape(forward: true), corner: size * 0.08)
                     .frame(width: size * 0.95, height: size * 0.9)
             }
+            if extras {
+                LikeButton(player: player, size: size)
+            }
         }
         .frame(height: size)
         .buttonStyle(PressStyle())
         .foregroundStyle(.white)
+    }
+}
+
+struct LikeButton: View {
+    @Bindable var player: Player
+    let size: CGFloat
+    @State private var picking = false
+    @State private var burst = false
+
+    var body: some View {
+        Button {
+            guard let uri = player.track?.uri else { return }
+            if player.liked {
+                picking = true
+            } else {
+                player.like(uri)
+                burst.toggle()
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(Palette.muted, lineWidth: 1.6)
+                    .opacity(player.liked ? 0 : 1)
+                Image(systemName: "plus")
+                    .font(.system(size: size * 0.5, weight: .bold))
+                    .foregroundStyle(Palette.muted)
+                    .opacity(player.liked ? 0 : 1)
+                    .rotationEffect(.degrees(player.liked ? 90 : 0))
+                Circle()
+                    .fill(player.accentColor)
+                    .scaleEffect(player.liked ? 1 : 0.2)
+                    .opacity(player.liked ? 1 : 0)
+                Image(systemName: "checkmark")
+                    .font(.system(size: size * 0.46, weight: .heavy))
+                    .foregroundStyle(.black.opacity(0.8))
+                    .scaleEffect(player.liked ? 1 : 0.3)
+                    .opacity(player.liked ? 1 : 0)
+            }
+            .frame(width: size, height: size)
+            .symbolEffect(.bounce, value: burst)
+            .animation(.spring(response: 0.35, dampingFraction: 0.55), value: player.liked)
+        }
+        .help(player.liked ? "Add to playlist" : "Save to Liked Songs")
+        .popover(isPresented: $picking, arrowEdge: .top) {
+            PlaylistPicker(player: player) { picking = false }
+        }
+    }
+}
+
+struct PlaylistPicker: View {
+    @Bindable var player: Player
+    let done: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Add to playlist")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.muted)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 4)
+            PickerRow(title: "Liked Songs", checked: true, accent: player.accentColor) {
+                if let uri = player.track?.uri { player.unlike(uri) }
+                done()
+            }
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(player.editable) { list in
+                        PickerRow(title: list.title, checked: false, accent: player.accentColor) {
+                            if let uri = player.track?.uri { player.add(uri, to: list) }
+                            done()
+                        }
+                    }
+                }
+            }
+            .frame(maxHeight: 220)
+        }
+        .padding(8)
+        .frame(width: 230)
+        .background(Palette.background)
+        .foregroundStyle(.white)
+    }
+}
+
+struct PickerRow: View {
+    let title: String
+    let checked: Bool
+    let accent: Color
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Image(systemName: checked ? "checkmark.circle.fill" : "plus.circle")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(checked ? accent : Palette.muted)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? Color(white: 0.17) : .clear))
+        .contentShape(Rectangle())
+        .pointerStyle(.link)
+        .onHover { hovering = $0 }
+        .onTapGesture(perform: action)
     }
 }
 

@@ -63,6 +63,15 @@ struct API {
         try await send("POST", "playlists/\(id)/items", body: ["uris": uris])
     }
 
+    func libraryContains(_ uris: [String]) async throws -> [Bool] {
+        let result: [Bool]? = try await get("me/library/contains", query: ["uris": uris.joined(separator: ",")])
+        return result ?? []
+    }
+
+    func removeFromLibrary(_ uris: [String]) async throws {
+        try await send("DELETE", "me/library", body: ["uris": uris])
+    }
+
     func saveToLibrary(_ uris: [String]) async throws {
         try await send("PUT", "me/library", body: ["uris": uris])
     }

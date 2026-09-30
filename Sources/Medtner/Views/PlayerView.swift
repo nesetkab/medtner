@@ -7,7 +7,6 @@ struct HoverTag: Equatable {
 
 struct PlayerView: View {
     @Bindable var player: Player
-    @AppStorage("vinyl") private var vinyl = false
     @State private var searchOpen = false
     @State private var hoverTag: HoverTag?
     @FocusState private var searchFocused: Bool
@@ -55,9 +54,6 @@ struct PlayerView: View {
         .frame(width: 716, height: 465)
         .foregroundStyle(.white)
         .onReceive(NotificationCenter.default.publisher(for: .medtnerSearch)) { _ in openSearch() }
-        .onReceive(NotificationCenter.default.publisher(for: .medtnerVinyl)) { _ in
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.72)) { vinyl.toggle() }
-        }
     }
 
     private var leftColumn: some View {
@@ -67,35 +63,21 @@ struct PlayerView: View {
                 .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen || player.opened != nil)
                 .frame(width: cover, alignment: .leading)
 
-            ZStack(alignment: .leading) {
-                SpinningRecord(image: player.recordImage, spinning: vinyl && player.isPlaying)
-                    .frame(width: cover - 12, height: cover - 12)
-                    .offset(x: vinyl && !searchOpen ? cover * 0.58 : 6)
-                    .opacity(vinyl && !searchOpen ? 1 : 0)
-                    .animation(.spring(response: 0.75, dampingFraction: 0.74), value: vinyl)
-                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: searchOpen)
-
+            ZStack {
+                AmbientRipples(color: player.accent, active: player.isPlaying, size: cover, radius: 22)
+                    .frame(width: cover * 1.3, height: cover * 1.3)
+                    .allowsHitTesting(false)
                 CoverArt(player: player, size: cover)
                     .trackMenu(player.track?.uri, player: player)
-                    .onTapGesture(count: 2) {
-                        withAnimation(.spring(response: 0.7, dampingFraction: 0.72)) { vinyl.toggle() }
-                    }
             }
-            .frame(width: cover, height: cover, alignment: .leading)
-            .overlay(alignment: .topTrailing) {
-                if vinyl && !searchOpen {
-                    Tonearm(engaged: player.isPlaying, color: player.accentColor)
-                        .offset(x: cover * 0.58 + 14, y: -34)
-                        .transition(.opacity.combined(with: .offset(x: 30)))
-                }
-            }
+            .frame(width: cover, height: cover)
 
             Spacer(minLength: 16)
 
             VolumeBar(player: player, width: cover - 36)
                 .padding(.bottom, 20)
 
-            Transport(player: player)
+            Transport(player: player, spacing: 22, extras: true)
         }
         .frame(width: cover, alignment: .leading)
     }
@@ -234,5 +216,4 @@ struct CoverArt: View {
 
 extension Notification.Name {
     static let medtnerSearch = Notification.Name("medtner.search")
-    static let medtnerVinyl = Notification.Name("medtner.vinyl")
 }

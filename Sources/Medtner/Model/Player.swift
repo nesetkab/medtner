@@ -42,7 +42,6 @@ final class Player {
     var contextURI: String?
 
     var artwork: NSImage?
-    var recordImage: NSImage?
     var accent = Palette.defaultAccent
 
     var shelfMode: ShelfMode = ShelfMode(rawValue: UserDefaults.standard.string(forKey: "shelf") ?? "") ?? .recent {
@@ -55,6 +54,7 @@ final class Player {
     var recent: [Tile] = []
     var playlists: [Tile] = []
 
+    var liked = false
     var opened: OpenCollection?
     var editable: [Tile] = []
     var toast: String?
@@ -208,7 +208,18 @@ final class Player {
         resumeWake()
     }
 
-    private func handleEngineEvent(_ event: String) {
+    private var onEngine: Bool { device == nil || device?.name == Engine.deviceName }
+
+    private func handleEngineEvent(_ raw: String) {
+        let parts = raw.split(separator: "|", omittingEmptySubsequences: false).map(String.init)
+        let event = parts.first ?? ""
+        if event == "volume_changed", let value = Int(parts.count > 1 ? parts[1] : ""), Date() > volumeQuietUntil {
+            volume = Int((Double(value) / 65_535 * 100).rounded())
+            engine.audio.setVolume(volume)
+            UserDefaults.standard.set(volume, forKey: "engineVolume")
+            return
+        }
+        if event == "playing" { engine.audio.release() }
         switch event {
         case "track_changed", "playing", "paused", "seeked", "stopped", "session_connected", "shuffle_changed":
             poke()
@@ -244,6 +255,13 @@ final class Player {
         if changed {
             withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) { track = state.item }
             loadArtwork()
+            liked = false
+            if let uri = state.item?.uri {
+                Task {
+                    let result = (try? await api.libraryContains([uri]))?.first ?? false
+                    if track?.uri == uri { liked = result }
+                }
+            }
             if shelfMode == .queue { Task { await loadShelf() } }
         }
         isPlaying = state.is_playing
@@ -253,7 +271,9 @@ final class Player {
         device = state.device
         shuffle = state.shuffle_state ?? false
         contextURI = state.context?.uri
-        if let v = state.device?.volume_percent, volumeTask == nil, Date() > volumeQuietUntil { volume = v }
+        if state.device?.name != Engine.deviceName, let v = state.device?.volume_percent, volumeTask == nil, Date() > volumeQuietUntil {
+            volume = v
+        }
     }
 
     private func loadArtwork() {
@@ -265,7 +285,6 @@ final class Player {
             guard let image = await ArtworkStore.shared.image(url), url == artURL else { return }
             let color = await Task.detached(priority: .utility) { Palette.accent(from: image) }.value
             artwork = image
-            recordImage = RecordArt.render(label: image, size: 420, accent: color)
             withAnimation(.easeInOut(duration: 0.9)) { accent = color }
         }
     }
@@ -316,6 +335,9 @@ final class Player {
         progressMs = position()
         progressStamp = Date()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying.toggle() }
+        if onEngine {
+            if wasPlaying { engine.audio.hold() } else { engine.audio.release() }
+        }
         hold()
         perform { [api] device in
             if wasPlaying { try await api.pause() } else { try await api.play(device: device) }
@@ -324,6 +346,7 @@ final class Player {
 
     private func wakeAndResume() {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
+        engine.audio.release()
         hold(2)
         Task {
             guard let id = await engineDeviceID(wait: 8) else {
@@ -368,7 +391,8 @@ final class Player {
         guard clamped != volume || volumeTask == nil else { return }
         volume = clamped
         UserDefaults.standard.set(clamped, forKey: "engineVolume")
-        guard volumeTask == nil else { return }
+        engine.audio.setVolume(clamped)
+        guard !onEngine, volumeTask == nil else { return }
         volumeTask = Task {
             var sent = -1
             while sent != volume {
@@ -388,6 +412,7 @@ final class Player {
     }
 
     func play(_ tile: Tile) {
+        if onEngine { engine.audio.release() }
         hold(0.3)
         perform { [api] device in
             if let context = tile.contextURI {
@@ -422,6 +447,7 @@ final class Player {
 
     func open(_ tile: Tile) {
         guard let context = tile.contextURI else { return play(tile) }
+        if opened?.tile.id == tile.id { return closeCollection() }
         withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { opened = OpenCollection(tile: tile) }
         Task {
             let parts = context.split(separator: ":").map(String.init)
@@ -475,12 +501,27 @@ final class Player {
         }
     }
 
+    func unlike(_ uri: String) {
+        if uri == track?.uri { withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { liked = false } }
+        Task {
+            do {
+                try await api.removeFromLibrary([uri])
+                flash("Removed from Liked Songs")
+            } catch {
+                if uri == track?.uri { liked = true }
+                flash("Couldn't remove that one")
+            }
+        }
+    }
+
     func like(_ uri: String) {
+        if uri == track?.uri { withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { liked = true } }
         Task {
             do {
                 try await api.saveToLibrary([uri])
                 flash("Saved to Liked Songs")
             } catch {
+                if uri == track?.uri { liked = false }
                 flash("Couldn't save that one")
             }
         }
