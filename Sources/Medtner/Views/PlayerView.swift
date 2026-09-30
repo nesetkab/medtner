@@ -119,14 +119,16 @@ struct PlayerView: View {
                         .id(opened.tile.id)
                         .transition(.asymmetric(insertion: .offset(x: 40).combined(with: .opacity), removal: .opacity))
                 }
-                if searchOpen {
-                    VStack(alignment: .leading, spacing: 6) {
-                        SearchField(player: player, focused: $searchFocused) { closeSearch() }
-                        SearchResults(player: player) { closeSearch() }
-                    }
-                    .padding(.top, 6)
-                    .transition(.asymmetric(insertion: .offset(y: -12).combined(with: .opacity), removal: .opacity))
+                VStack(alignment: .leading, spacing: 6) {
+                    SearchField(player: player, focused: $searchFocused) { closeSearch() }
+                    SearchResults(player: player) { closeSearch() }
                 }
+                .padding(.top, 6)
+                .offset(y: searchOpen ? 0 : -12)
+                .opacity(searchOpen ? 1 : 0)
+                .allowsHitTesting(searchOpen)
+                .disabled(!searchOpen)
+                .accessibilityHidden(!searchOpen)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
@@ -165,7 +167,9 @@ struct PlayerView: View {
         player.closeCollection()
         withAnimation(.snappy(duration: 0.2)) { searchOpen = true }
         player.searching = true
-        searchFocused = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            if searchOpen { searchFocused = true }
+        }
     }
 
     private func closeSearch() {
