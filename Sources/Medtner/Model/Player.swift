@@ -56,6 +56,8 @@ final class Player {
     var playlists: [Tile] = []
 
     var liked = false
+    var fullScreen = false
+    var upNext: [Tile] = []
     var progressEpoch = 0
     var opened: OpenCollection?
     var editable: [Tile] = []
@@ -551,6 +553,14 @@ final class Player {
         Task {
             try? await Task.sleep(for: .seconds(1.8))
             if toast == message { withAnimation(.easeOut(duration: 0.25)) { toast = nil } }
+        }
+    }
+
+    func loadUpNext() async {
+        guard let tracks = try? await api.queue() else { return }
+        upNext = tracks.prefix(3).enumerated().map { index, track in
+            Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
+                 art: track.artwork.best(near: 120), playURI: track.uri, contextURI: nil)
         }
     }
 

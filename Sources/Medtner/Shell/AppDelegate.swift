@@ -6,7 +6,10 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            if player.phase == .ready {
+            if player.phase == .ready && player.fullScreen {
+                FullView(player: player)
+                    .transition(.opacity)
+            } else if player.phase == .ready {
                 PlayerView(player: player)
                     .transition(.opacity.combined(with: .scale(scale: 1.02)))
             } else {
@@ -15,6 +18,7 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: player.phase == .ready)
+        .animation(.easeInOut(duration: 0.5), value: player.fullScreen)
         .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
@@ -69,6 +73,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.isReleasedWhenClosed = false
         window.title = "Medtner"
         window.appearance = NSAppearance(named: .darkAqua)
+        window.collectionBehavior = [.fullScreenPrimary]
         window.delegate = self
         let host = NSHostingView(rootView: RootView(player: player))
         host.sizingOptions = []
@@ -83,6 +88,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self.windowVisible = self.window.occlusionState.contains(.visible)
             }
         }
+    }
+
+    func window(_ window: NSWindow, willUseFullScreenContentSize proposedSize: NSSize) -> NSSize {
+        proposedSize
+    }
+
+    func windowWillEnterFullScreen(_ notification: Notification) {
+        window.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        player.fullScreen = true
+    }
+
+    func windowWillExitFullScreen(_ notification: Notification) {
+        player.fullScreen = false
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        window.setContentSize(NSSize(width: Layout.width, height: Layout.height))
     }
 
     func showWindow() {
@@ -188,7 +210,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.subtracting([.function, .numericPad]).isEmpty else { return event }
             switch event.keyCode {
-            case 53: self.player.closeCollection()
+            case 53:
+                if self.window.styleMask.contains(.fullScreen) {
+                    self.window.toggleFullScreen(nil)
+                } else {
+                    self.player.closeCollection()
+                }
             case 49: self.player.togglePlay()
             case 123: self.player.previous()
             case 124: self.player.next()

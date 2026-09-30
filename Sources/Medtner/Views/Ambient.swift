@@ -12,6 +12,8 @@ final class BlobView: NSView {
     private var colors: [NSColor] = []
     private var diameter: CGFloat = 0
     private var watchdog: Timer?
+    var spread: CGFloat = 1
+    var glow: Float = 1
 
     private let anchors: [CGPoint] = [
         CGPoint(x: -0.26, y: -0.24),
@@ -68,7 +70,7 @@ final class BlobView: NSView {
         for (i, blob) in blobs.enumerated() {
             let size = diameter * (i == 0 ? 1.05 : 0.85)
             blob.bounds = CGRect(x: 0, y: 0, width: size, height: size)
-            blob.position = CGPoint(x: center.x + anchors[i].x * diameter, y: center.y + anchors[i].y * diameter)
+            blob.position = CGPoint(x: center.x + anchors[i].x * diameter * spread, y: center.y + anchors[i].y * diameter * spread)
         }
         CATransaction.commit()
     }
@@ -89,7 +91,7 @@ final class BlobView: NSView {
             smoothed[i] += (target - smoothed[i]) * rate
             let scale = 0.7 + smoothed[i] * 0.55
             blob.transform = CATransform3DMakeScale(scale, scale, 1)
-            blob.opacity = Float(0.3 + smoothed[i] * 0.5)
+            blob.opacity = min(1, Float(0.3 + smoothed[i] * 0.5) * glow)
         }
         CATransaction.commit()
     }
@@ -97,7 +99,7 @@ final class BlobView: NSView {
     private func begin() {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.8)
-        for blob in blobs { blob.opacity = 0.45 }
+        for blob in blobs { blob.opacity = min(1, 0.45 * glow) }
         CATransaction.commit()
 
         let drift = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -160,9 +162,13 @@ struct AmbientBlobs: NSViewRepresentable {
     let colors: [NSColor]
     let playing: Bool
     let diameter: CGFloat
+    var spread: CGFloat = 1
+    var glow: Float = 1
 
     func makeNSView(context: Context) -> BlobView {
         let view = BlobView(frame: .zero)
+        view.spread = spread
+        view.glow = glow
         player.engine.audio.onLevels = { [weak view] levels in
             DispatchQueue.main.async { view?.receive(levels) }
         }
