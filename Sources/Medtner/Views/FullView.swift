@@ -157,7 +157,6 @@ struct FullView: View {
         }
         .ignoresSafeArea()
         .foregroundStyle(.white)
-        .task(id: player.track?.uri) { await player.loadUpNext() }
         .onReceive(NotificationCenter.default.publisher(for: .medtnerSearch)) { _ in openSearch() }
         .onChange(of: pinned) { _, isPinned in if !isPinned { reveal() } }
         .onDisappear { NSCursor.setHiddenUntilMouseMoves(false) }

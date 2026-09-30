@@ -84,6 +84,7 @@ final class Player {
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
     @ObservationIgnored private var volumeQuietUntil = Date.distantPast
     @ObservationIgnored private var artURL: URL?
+    @ObservationIgnored private var queuedTracks: [Track] = []
     @ObservationIgnored private var userID: String?
 
     var shelf: [Tile] {
@@ -266,6 +267,7 @@ final class Player {
                     if track?.uri == uri { liked = result }
                 }
             }
+            Task { await loadUpNext() }
             if shelfMode == .queue { Task { await loadShelf() } }
         }
         isPlaying = state.is_playing
@@ -376,7 +378,16 @@ final class Player {
     }
 
     func next() {
-        hold(0.6)
+        hold(1.5)
+        if let upcoming = queuedTracks.first {
+            queuedTracks.removeFirst()
+            withAnimation(.easeOut(duration: 0.5)) { track = upcoming }
+            durationMs = max(upcoming.duration_ms, 1)
+            progressMs = 0
+            progressStamp = Date()
+            progressEpoch &+= 1
+            loadArtwork()
+        }
         perform { [api] _ in try await api.next() }
     }
 
@@ -558,6 +569,7 @@ final class Player {
 
     func loadUpNext() async {
         guard let tracks = try? await api.queue() else { return }
+        queuedTracks = Array(tracks.prefix(5))
         upNext = tracks.prefix(3).enumerated().map { index, track in
             Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
                  art: track.artwork.best(near: 120), playURI: track.uri, contextURI: nil)

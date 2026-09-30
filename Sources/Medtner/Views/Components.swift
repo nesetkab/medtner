@@ -18,11 +18,13 @@ private struct PressBody<Label: View>: View {
 
     var body: some View {
         label
-            .contentShape(Rectangle().inset(by: -8))
-            .pointerStyle(.link)
             .scaleEffect(pressed ? scale : hovering ? hover : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.55), value: pressed)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hovering)
+            .padding(10)
+            .contentShape(Rectangle())
+            .padding(-10)
+            .pointerStyle(.link)
             .onHover { hovering = $0 }
     }
 }

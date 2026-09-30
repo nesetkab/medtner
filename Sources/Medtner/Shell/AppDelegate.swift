@@ -24,6 +24,10 @@ struct RootView: View {
     }
 }
 
+final class FirstClickHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let player = Player.shared
@@ -75,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.appearance = NSAppearance(named: .darkAqua)
         window.collectionBehavior = [.fullScreenPrimary]
         window.delegate = self
-        let host = NSHostingView(rootView: RootView(player: player))
+        let host = FirstClickHostingView(rootView: RootView(player: player))
         host.sizingOptions = []
         window.contentView = host
         window.setContentSize(NSSize(width: Layout.width, height: Layout.height))
