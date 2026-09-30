@@ -132,18 +132,27 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let glyph = StatusGlyph(frame: .zero)
     private let player: Player
-    private let onClick: (NSStatusBarButton) -> Void
-    private let menuBuilder: () -> NSMenu
+    private let menu = NSMenu()
+    private let nowPlaying: NowPlayingRow
+    private let transport: TransportRow
+    private let volume: VolumeRow
+    private let extraItems: () -> [NSMenuItem]
+    private var liveTimer: Timer?
+    private(set) var isOpen = false
+    var onOpenChange: ((Bool) -> Void)?
 
-    init(player: Player, onClick: @escaping (NSStatusBarButton) -> Void, menu: @escaping () -> NSMenu) {
+    init(player: Player, items: @escaping () -> [NSMenuItem]) {
         self.player = player
-        self.onClick = onClick
-        self.menuBuilder = menu
+        self.extraItems = items
+        nowPlaying = NowPlayingRow(player: player)
+        transport = TransportRow(player: player)
+        volume = VolumeRow(player: player)
         super.init()
+        menu.delegate = self
+        menu.autoenablesItems = false
+        item.menu = menu
         guard let button = item.button else { return }
-        button.target = self
-        button.action = #selector(clicked(_:))
-        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.toolTip = "Medtner"
         button.addSubview(glyph)
         glyph.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -155,8 +164,6 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         observe()
     }
 
-    var button: NSStatusBarButton? { item.button }
-
     private func observe() {
         withObservationTracking {
             render()
@@ -167,25 +174,51 @@ final class StatusItemController: NSObject, NSMenuDelegate {
 
     func render() {
         let text = player.track.map { "\($0.name) — \($0.artistLine)" } ?? ""
-        glyph.showTicker = UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true
+        let ticker = UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true
+        if ticker != glyph.showTicker {
+            glyph.showTicker = ticker
+            glyph.needsLayout = true
+        }
         glyph.update(text: text, playing: player.isPlaying, accent: player.accent)
         item.length = glyph.preferredWidth
-        glyph.needsLayout = true
+        _ = (player.artwork, player.volume, player.shuffle, player.durationMs)
+        guard isOpen else { return }
+        nowPlaying.needsDisplay = true
+        transport.sync()
+        volume.needsDisplay = true
     }
 
-    @objc private func clicked(_ sender: NSStatusBarButton) {
-        let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp || event?.modifierFlags.contains(.control) == true {
-            let menu = menuBuilder()
-            item.menu = menu
-            menu.delegate = self
-            sender.performClick(nil)
-        } else {
-            onClick(sender)
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        for view in [nowPlaying, transport, volume] as [NSView] {
+            let row = NSMenuItem()
+            row.view = view
+            menu.addItem(row)
         }
+        menu.addItem(.separator())
+        extraItems().forEach(menu.addItem)
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        isOpen = true
+        onOpenChange?(true)
+        transport.sync()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.player.isPlaying else { return }
+                self.nowPlaying.needsDisplay = true
+            }
+        }
+        timer.tolerance = 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        liveTimer = timer
+        Task { await player.loadDevices() }
     }
 
     func menuDidClose(_ menu: NSMenu) {
-        item.menu = nil
+        isOpen = false
+        liveTimer?.invalidate()
+        liveTimer = nil
+        onOpenChange?(false)
     }
 }

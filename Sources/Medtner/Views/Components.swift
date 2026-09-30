@@ -28,48 +28,122 @@ extension View {
 }
 
 struct Magnifier: View {
-    var lineWidth: CGFloat = 5
+    var lineWidth: CGFloat = 2.4
 
     var body: some View {
         Canvas { context, size in
             let s = min(size.width, size.height)
             let r = s * 0.3
-            let center = CGPoint(x: s * 0.62, y: s * 0.36)
+            let center = CGPoint(x: s * 0.6, y: s * 0.4)
             let ring = Path(ellipseIn: CGRect(x: center.x - r, y: center.y - r, width: r * 2, height: r * 2))
             context.stroke(ring, with: .foreground, lineWidth: lineWidth)
             var handle = Path()
-            let start = CGPoint(x: center.x - r * 0.62, y: center.y + r * 0.8)
-            handle.move(to: start)
-            handle.addLine(to: CGPoint(x: s * 0.1, y: s * 0.95))
-            context.stroke(handle, with: .foreground, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+            let angle = CGFloat.pi * 0.75
+            handle.move(to: CGPoint(x: center.x + cos(angle) * (r + lineWidth / 2), y: center.y + sin(angle) * (r + lineWidth / 2)))
+            handle.addLine(to: CGPoint(x: center.x + cos(angle) * s * 0.62, y: center.y + sin(angle) * s * 0.62))
+            context.stroke(handle, with: .foreground, style: StrokeStyle(lineWidth: lineWidth * 1.15, lineCap: .round))
         }
+    }
+}
+
+struct PlayPauseShape: Shape {
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        if progress < 0.02 {
+            var triangle = Path()
+            triangle.move(to: CGPoint(x: rect.minX + 0.08 * w, y: rect.minY))
+            triangle.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+            triangle.addLine(to: CGPoint(x: rect.minX + 0.08 * w, y: rect.maxY))
+            triangle.closeSubpath()
+            return triangle
+        }
+        func mix(_ a: CGPoint, _ b: CGPoint) -> CGPoint {
+            CGPoint(x: rect.minX + (a.x + (b.x - a.x) * progress) * w, y: rect.minY + (a.y + (b.y - a.y) * progress) * h)
+        }
+        let left = [
+            mix(CGPoint(x: 0.08, y: 0), CGPoint(x: 0.12, y: 0.02)),
+            mix(CGPoint(x: 0.54, y: 0.26), CGPoint(x: 0.38, y: 0.02)),
+            mix(CGPoint(x: 0.54, y: 0.74), CGPoint(x: 0.38, y: 0.98)),
+            mix(CGPoint(x: 0.08, y: 1), CGPoint(x: 0.12, y: 0.98)),
+        ]
+        let right = [
+            mix(CGPoint(x: 0.54, y: 0.26), CGPoint(x: 0.62, y: 0.02)),
+            mix(CGPoint(x: 1, y: 0.5), CGPoint(x: 0.88, y: 0.02)),
+            mix(CGPoint(x: 1, y: 0.5), CGPoint(x: 0.88, y: 0.98)),
+            mix(CGPoint(x: 0.54, y: 0.74), CGPoint(x: 0.62, y: 0.98)),
+        ]
+        var path = Path()
+        path.addLines(left)
+        path.closeSubpath()
+        path.addLines(right)
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct SkipShape: Shape {
+    var forward = true
+
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, h = rect.height
+        var path = Path()
+        path.move(to: CGPoint(x: 0.04 * w, y: 0.06 * h))
+        path.addLine(to: CGPoint(x: 0.7 * w, y: 0.5 * h))
+        path.addLine(to: CGPoint(x: 0.04 * w, y: 0.94 * h))
+        path.closeSubpath()
+        path.addRect(CGRect(x: 0.84 * w, y: 0.06 * h, width: 0.12 * w, height: 0.88 * h))
+        guard !forward else { return path.offsetBy(dx: rect.minX, dy: rect.minY) }
+        return path
+            .applying(CGAffineTransform(scaleX: -1, y: 1).translatedBy(x: -w, y: 0))
+            .offsetBy(dx: rect.minX, dy: rect.minY)
+    }
+}
+
+struct Soft<S: Shape>: View {
+    let shape: S
+    var corner: CGFloat = 2
+
+    var body: some View {
+        shape
+            .fill(.foreground)
+            .overlay(shape.stroke(.foreground, style: StrokeStyle(lineWidth: corner, lineJoin: .round)))
     }
 }
 
 struct Transport: View {
     @Bindable var player: Player
-    var size: CGFloat = 30
-    var spacing: CGFloat = 14
+    var size: CGFloat = 24
+    var spacing: CGFloat = 22
 
     var body: some View {
         HStack(spacing: spacing) {
             Button { player.previous() } label: {
-                Image(systemName: "backward.end.fill")
-                    .font(.system(size: size, weight: .black))
+                Soft(shape: SkipShape(forward: false), corner: size * 0.08)
+                    .frame(width: size * 0.78, height: size * 0.72)
+                    .padding(6)
             }
             Button { player.togglePlay() } label: {
-                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: size * 1.05, weight: .black))
-                    .contentTransition(.symbolEffect(.replace.downUp.byLayer))
-                    .frame(width: size * 1.25)
+                Soft(shape: PlayPauseShape(progress: player.isPlaying ? 1 : 0), corner: size * 0.09)
+                    .frame(width: size * 0.9, height: size)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: player.isPlaying)
+                    .padding(6)
             }
             Button { player.next() } label: {
-                Image(systemName: "forward.end.fill")
-                    .font(.system(size: size, weight: .black))
+                Soft(shape: SkipShape(forward: true), corner: size * 0.08)
+                    .frame(width: size * 0.78, height: size * 0.72)
+                    .padding(6)
             }
         }
         .buttonStyle(PressStyle())
         .foregroundStyle(.white)
+        .padding(.horizontal, -6)
     }
 }
 
@@ -85,15 +159,15 @@ struct VolumeBar: View {
                 player.setVolume(player.volume > 0 ? 0 : 60)
             } label: {
                 Image(systemName: "speaker.wave.3.fill", variableValue: Double(player.volume) / 100)
-                    .font(.system(size: 22, weight: .black))
-                    .frame(width: 44, alignment: .leading)
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(width: 32, alignment: .leading)
                     .contentTransition(.symbolEffect(.automatic))
             }
             .buttonStyle(PressStyle())
 
             GeometryReader { geo in
                 let fraction = CGFloat(player.volume) / 100
-                let thick: CGFloat = dragging || hovering ? 14 : 11
+                let thick: CGFloat = dragging || hovering ? 10 : 7
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(white: 0.55)).frame(height: 2)
                     Capsule().fill(.white)

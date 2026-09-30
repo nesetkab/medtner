@@ -26,11 +26,10 @@ final class PillPanel: NSPanel {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let player = Player.shared
     private var window: NSWindow!
     private var status: StatusItemController!
-    private let popover = NSPopover()
     private var pill: PillPanel?
     private var keyMonitor: Any?
     private var windowVisible = false { didSet { updateSurfaces() } }
@@ -39,19 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         buildMenu()
         buildWindow()
 
-        popover.behavior = .transient
-        popover.animates = true
-        popover.delegate = self
-        popover.appearance = NSAppearance(named: .darkAqua)
-        popover.contentViewController = NSHostingController(
-            rootView: MiniController(player: player, openPlayer: { [weak self] in self?.showWindow() },
-                                     togglePill: { [weak self] in self?.togglePill() })
-                .preferredColorScheme(.dark)
-        )
-
-        status = StatusItemController(player: player, onClick: { [weak self] button in
-            self?.togglePopover(button)
-        }, menu: { [weak self] in self?.statusMenu() ?? NSMenu() })
+        status = StatusItemController(player: player) { [weak self] in self?.menuItems() ?? [] }
+        status.onOpenChange = { [weak self] _ in self?.updateSurfaces() }
 
         installKeys()
         player.boot()
@@ -100,25 +88,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
 
     func showWindow() {
-        popover.performClose(nil)
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
     }
 
-    private func togglePopover(_ button: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-            updateSurfaces()
-        }
-    }
-
-    func popoverDidClose(_ notification: Notification) { updateSurfaces() }
-
     private func updateSurfaces() {
-        player.visibleSurfaces = (windowVisible ? 1 : 0) + (popover.isShown ? 1 : 0) + (pill != nil ? 1 : 0)
+        player.visibleSurfaces = (windowVisible ? 1 : 0) + (status?.isOpen == true ? 1 : 0) + (pill != nil ? 1 : 0)
     }
 
     @objc func togglePill() {
@@ -190,22 +165,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     @objc func previousTrack() { player.previous() }
     @objc func signOut() { Task { await player.signOut() } }
 
-    private func statusMenu() -> NSMenu {
-        let menu = NSMenu()
-        menu.addItem(withTitle: player.isPlaying ? "Pause" : "Play", action: #selector(playPause), keyEquivalent: "")
-        menu.addItem(withTitle: "Next", action: #selector(nextTrack), keyEquivalent: "")
-        menu.addItem(withTitle: "Previous", action: #selector(previousTrack), keyEquivalent: "")
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Open Medtner", action: #selector(openWindowAction), keyEquivalent: "")
-        let pillItem = menu.addItem(withTitle: "Pill Mode", action: #selector(togglePill), keyEquivalent: "")
-        pillItem.state = pill != nil ? .on : .off
-        let tickerItem = menu.addItem(withTitle: "Scrolling Title", action: #selector(toggleTicker), keyEquivalent: "")
-        tickerItem.state = (UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true) ? .on : .off
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "Sign Out", action: #selector(signOut), keyEquivalent: "")
-        menu.addItem(withTitle: "Quit Medtner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        for item in menu.items where item.action != #selector(NSApplication.terminate(_:)) { item.target = self }
-        return menu
+    @objc private func pickDevice(_ sender: NSMenuItem) {
+        guard let device = sender.representedObject as? Device else { return }
+        player.transfer(to: device)
+    }
+
+    private func menuItems() -> [NSMenuItem] {
+        var items: [NSMenuItem] = []
+        func add(_ title: String, _ action: Selector, key: String = "", on: Bool? = nil) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = self
+            if let on { item.state = on ? .on : .off }
+            items.append(item)
+        }
+
+        let devices = NSMenuItem(title: "Play On", action: nil, keyEquivalent: "")
+        let list = NSMenu()
+        for device in player.devices {
+            let entry = NSMenuItem(title: device.name, action: #selector(pickDevice(_:)), keyEquivalent: "")
+            entry.target = self
+            entry.representedObject = device
+            entry.state = device.id == player.device?.id ? .on : .off
+            list.addItem(entry)
+        }
+        if player.devices.isEmpty {
+            list.addItem(NSMenuItem(title: "No devices", action: nil, keyEquivalent: ""))
+        }
+        devices.submenu = list
+        items.append(devices)
+        items.append(.separator())
+
+        add("Open Medtner", #selector(openWindowAction), key: "0")
+        add("Pill Mode", #selector(togglePill), on: pill != nil)
+        add("Scrolling Title", #selector(toggleTicker), on: UserDefaults.standard.object(forKey: "ticker") as? Bool ?? true)
+        items.append(.separator())
+        add("Sign Out", #selector(signOut))
+        let quit = NSMenuItem(title: "Quit Medtner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        items.append(quit)
+        return items
     }
 
     private func buildMenu() {

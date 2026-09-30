@@ -97,8 +97,9 @@ struct PlayerView: View {
                 Button {
                     searchOpen ? closeSearch() : openSearch()
                 } label: {
-                    Magnifier(lineWidth: 5)
-                        .frame(width: 44, height: 44)
+                    Magnifier()
+                        .frame(width: 24, height: 24)
+                        .padding(8)
                         .rotationEffect(.degrees(searchOpen ? -90 : 0))
                         .foregroundStyle(searchOpen ? player.accentColor : Color(white: 0.85))
                 }
