@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 actor ArtworkStore {
@@ -6,7 +7,8 @@ actor ArtworkStore {
 
     nonisolated(unsafe) private let cache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
-        cache.countLimit = 120
+        cache.countLimit = 60
+        cache.totalCostLimit = 30 * 1024 * 1024
         return cache
     }()
     private var inflight: [URL: Task<NSImage?, Never>] = [:]
@@ -17,6 +19,18 @@ actor ArtworkStore {
         return URLSession(configuration: config)
     }()
 
+    nonisolated static func decode(_ data: Data, maxPixels: Int) -> NSImage? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+        return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
+    }
+
     nonisolated func cached(_ url: URL) -> NSImage? {
         cache.object(forKey: url as NSURL)
     }
@@ -25,13 +39,16 @@ actor ArtworkStore {
         if let hit = cache.object(forKey: url as NSURL) { return hit }
         if let task = inflight[url] { return await task.value }
         let task = Task<NSImage?, Never> {
-            guard let (data, _) = try? await session.data(from: url), let image = NSImage(data: data) else { return nil }
-            return image
+            guard let (data, _) = try? await session.data(from: url) else { return nil }
+            return Self.decode(data, maxPixels: 640)
         }
         inflight[url] = task
         let image = await task.value
         inflight[url] = nil
-        if let image { cache.setObject(image, forKey: url as NSURL) }
+        if let image {
+            let cost = Int(image.size.width * image.size.height * 4)
+            cache.setObject(image, forKey: url as NSURL, cost: cost)
+        }
         return image
     }
 }

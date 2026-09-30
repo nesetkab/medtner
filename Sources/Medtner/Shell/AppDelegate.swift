@@ -25,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let player = Player.shared
     private var window: NSWindow!
     private var status: StatusItemController!
+    private var nowPlaying: NowPlaying?
     private var keyMonitor: Any?
     private var windowVisible = false { didSet { updateSurfaces() } }
 
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         status.onOpenChange = { [weak self] _ in self?.updateSurfaces() }
 
         installKeys()
+        nowPlaying = NowPlaying(player: player)
         player.boot()
         window.makeKeyAndOrderFront(nil)
     }

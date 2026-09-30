@@ -29,6 +29,7 @@ final class BlobView: NSView {
             blob.startPoint = CGPoint(x: 0.5, y: 0.5)
             blob.endPoint = CGPoint(x: 1, y: 1)
             blob.locations = [0, 0.45, 1]
+            blob.contentsScale = 0.5
             blob.opacity = 0
             container.addSublayer(blob)
         }
