@@ -38,8 +38,11 @@ final class Player {
     var recordImage: NSImage?
     var accent = Palette.defaultAccent
 
-    var shelfMode: ShelfMode = .queue {
-        didSet { Task { await loadShelf() } }
+    var shelfMode: ShelfMode = ShelfMode(rawValue: UserDefaults.standard.string(forKey: "shelf") ?? "") ?? .recent {
+        didSet {
+            UserDefaults.standard.set(shelfMode.rawValue, forKey: "shelf")
+            Task { await loadShelf() }
+        }
     }
     var queue: [Tile] = []
     var recent: [Tile] = []
@@ -95,13 +98,16 @@ final class Player {
             self.poke()
         }
         engine.onLoginURL = { url in
-            NSWorkspace.shared.open(url)
+            Browser.open(url)
         }
         DistributedNotificationCenter.default().addObserver(forName: Engine.eventNotification, object: nil, queue: .main) { [weak self] note in
             let event = note.object as? String ?? ""
             Task { @MainActor in self?.handleEngineEvent(event) }
         }
-        Task { await resolvePhase() }
+        Task {
+            await resolvePhase()
+            if phase == .needsSignIn, ProcessInfo.processInfo.environment["MEDTNER_URL_SINK"] != nil { await signIn() }
+        }
     }
 
     func resolvePhase() async {
@@ -120,6 +126,7 @@ final class Player {
     func setClientID(_ id: String) async {
         UserDefaults.standard.set(id.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "clientID")
         await resolvePhase()
+        if phase == .needsSignIn { await signIn() }
     }
 
     func signIn() async {
@@ -144,14 +151,9 @@ final class Player {
     private func startLoop() {
         guard loop == nil else { return }
         loop = Task { [weak self] in
-            var first = true
             while !Task.isCancelled {
                 guard let self else { return }
                 await self.refresh()
-                if first {
-                    first = false
-                    await self.wakeEngineIfIdle()
-                }
                 await self.sleep(self.nextInterval())
             }
         }
@@ -254,13 +256,6 @@ final class Player {
         }
     }
 
-    private func wakeEngineIfIdle() async {
-        guard device == nil, engine.state == .running, let id = await engineDeviceID(wait: 8) else { return }
-        try? await api.transfer(to: id, play: false)
-        try? await Task.sleep(for: .milliseconds(700))
-        await refresh()
-    }
-
     private func engineDeviceID(wait seconds: Double) async -> String? {
         let deadline = Date().addingTimeInterval(seconds)
         repeat {
@@ -299,8 +294,8 @@ final class Player {
     }
 
     func togglePlay() {
-        if track == nil, let first = recent.first ?? playlists.first {
-            play(first)
+        if device == nil {
+            wakeAndResume()
             return
         }
         let wasPlaying = isPlaying
@@ -310,6 +305,28 @@ final class Player {
         hold()
         perform { [api] device in
             if wasPlaying { try await api.pause() } else { try await api.play(device: device) }
+        }
+    }
+
+    private func wakeAndResume() {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
+        hold(2)
+        Task {
+            guard let id = await engineDeviceID(wait: 8) else {
+                lastError = "Medtner's speaker isn't ready yet."
+                isPlaying = false
+                return
+            }
+            do {
+                try await api.transfer(to: id, play: true)
+            } catch {
+                if let first = recent.first ?? playlists.first {
+                    try? await api.play(device: id, context: first.contextURI, offset: first.contextURI == first.playURI ? nil : first.playURI)
+                }
+            }
+            try? await Task.sleep(for: .milliseconds(600))
+            holdUntil = .distantPast
+            await refresh()
         }
     }
 

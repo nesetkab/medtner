@@ -66,7 +66,7 @@ actor Auth {
         let server = LoopbackServer()
         async let callback = server.waitForCode(port: Self.redirectPort, path: "/callback")
         let authorizeURL = url.url!
-        await MainActor.run { _ = NSWorkspace.shared.open(authorizeURL) }
+        await MainActor.run { Browser.open(authorizeURL) }
         let result = try await callback
 
         let items = result.queryItems ?? []

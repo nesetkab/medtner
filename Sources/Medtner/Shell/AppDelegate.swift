@@ -15,6 +15,7 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.4), value: player.phase == .ready)
+        .ignoresSafeArea()
         .preferredColorScheme(.dark)
     }
 }
@@ -54,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
 
         installKeys()
         player.boot()
-        showWindow()
+        window.makeKeyAndOrderFront(nil)
         if UserDefaults.standard.bool(forKey: "pill") { togglePill() }
     }
 
@@ -77,15 +78,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         )
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
-        window.isMovableByWindowBackground = true
+        window.isMovableByWindowBackground = false
         window.backgroundColor = NSColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1)
         window.isReleasedWhenClosed = false
         window.title = "Medtner"
         window.appearance = NSAppearance(named: .darkAqua)
         window.delegate = self
-        window.contentView = NSHostingView(rootView: RootView(player: player))
+        let host = NSHostingView(rootView: RootView(player: player))
+        host.sizingOptions = []
+        window.contentView = host
+        window.setContentSize(NSSize(width: 716, height: 465))
         window.setFrameAutosaveName("MedtnerMain")
         if !window.setFrameUsingName("MedtnerMain") { window.center() }
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 716, height: 465)), display: false)
         NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
@@ -142,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.isMovableByWindowBackground = true
+        panel.isMovableByWindowBackground = false
         panel.hidesOnDeactivate = false
         let host = NSHostingView(rootView: PillView(player: player).preferredColorScheme(.dark))
         host.frame = NSRect(origin: .zero, size: size)

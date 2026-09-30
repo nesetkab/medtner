@@ -150,7 +150,6 @@ struct SearchField: View {
                 .fill(player.accentColor)
                 .frame(height: 3)
         }
-        .frame(width: 200)
     }
 }
 

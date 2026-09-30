@@ -80,13 +80,13 @@ struct VolumeBar: View {
     @State private var hovering = false
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button {
                 player.setVolume(player.volume > 0 ? 0 : 60)
             } label: {
                 Image(systemName: "speaker.wave.3.fill", variableValue: Double(player.volume) / 100)
-                    .font(.system(size: 24, weight: .black))
-                    .frame(width: 34, alignment: .leading)
+                    .font(.system(size: 22, weight: .black))
+                    .frame(width: 44, alignment: .leading)
                     .contentTransition(.symbolEffect(.automatic))
             }
             .buttonStyle(PressStyle())

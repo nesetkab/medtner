@@ -144,6 +144,7 @@ struct PillView: View {
                         .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
                 )
                 .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .gesture(WindowDragGesture())
                 .onHover { hover in
                     withAnimation(.spring(response: 0.42, dampingFraction: 0.72)) { expanded = hover }
                 }

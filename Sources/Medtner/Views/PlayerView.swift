@@ -16,12 +16,15 @@ struct PlayerView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Palette.background.ignoresSafeArea()
+            Palette.background
+                .ignoresSafeArea()
+                .gesture(WindowDragGesture())
 
             HStack(alignment: .top, spacing: 0) {
                 SeekRail(player: player)
                     .padding(.vertical, 30)
                     .padding(.leading, 18)
+                    .zIndex(4)
 
                 leftColumn
                     .padding(.leading, 26)
@@ -91,10 +94,6 @@ struct PlayerView: View {
         VStack(alignment: .trailing, spacing: 0) {
             HStack(spacing: 10) {
                 Spacer(minLength: 0)
-                if searchOpen {
-                    SearchField(player: player, focused: $searchFocused) { closeSearch() }
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
                 Button {
                     searchOpen ? closeSearch() : openSearch()
                 } label: {
@@ -109,14 +108,20 @@ struct PlayerView: View {
 
             ZStack(alignment: .topTrailing) {
                 if searchOpen {
-                    SearchResults(player: player) { closeSearch() }
-                        .transition(.opacity)
+                    VStack(alignment: .leading, spacing: 6) {
+                        SearchField(player: player, focused: $searchFocused) { closeSearch() }
+                        SearchResults(player: player) { closeSearch() }
+                    }
+                    .padding(.top, 42)
+                    .transition(.asymmetric(insertion: .offset(y: -12).combined(with: .opacity), removal: .opacity))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
             if !searchOpen {
                 ShelfTabs(player: player)
+                    .opacity(hoverTag == nil ? 1 : 0)
+                    .animation(.easeOut(duration: 0.15), value: hoverTag == nil)
                     .transition(.opacity)
             }
         }
