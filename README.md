@@ -1,5 +1,4 @@
-# Medtner
-## a lightweight spotify player 
+# Medtner, a lightweight Spotify player
 
 ![an image of medtner](image.png)
 
