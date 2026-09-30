@@ -142,7 +142,7 @@ struct FullView: View {
                     .opacity(controlsVisible ? 0 : 1)
 
                 library
-                    .padding(.top, margin + 80)
+                    .padding(.top, margin + 118)
                     .padding(.trailing, margin - 12)
                     .padding(.bottom, margin)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
@@ -212,12 +212,34 @@ struct FullView: View {
 
     private var clock: some View {
         TimelineView(.everyMinute) { context in
-            Text(context.date.formatted(.dateTime.hour().minute()).lowercased())
-                .font(.system(size: 44, weight: .light).monospacedDigit())
-                .tracking(-1)
-                .foregroundStyle(.white.opacity(0.55))
+            VStack(alignment: .trailing, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(Self.timeFormatter.string(from: context.date))
+                        .font(.system(size: 46, weight: .bold))
+                        .tracking(-1.8)
+                    if Self.usesMeridiem {
+                        Text(context.date.formatted(.dateTime.hour(.defaultDigits(amPM: .abbreviated))).filter(\.isLetter).lowercased())
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.55))
+                    }
+                }
+                Text(context.date.formatted(.dateTime.weekday(.wide).month(.wide).day()).lowercased())
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .foregroundStyle(.white.opacity(0.92))
         }
     }
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = usesMeridiem ? "h:mm" : "HH:mm"
+        return formatter
+    }()
+
+    private static let usesMeridiem: Bool = {
+        DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current)?.contains("a") ?? false
+    }()
 
     private func placard(side: CGFloat) -> some View {
         HStack(alignment: .bottom, spacing: side * 0.03) {
