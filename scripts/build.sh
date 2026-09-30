@@ -54,6 +54,12 @@ PLIST
 codesign --force --deep --sign - "$APP" >/dev/null
 du -sh "$APP" | awk '{print "built " $2 " (" $1 ")"}'
 
+if [ "${1:-}" = "dist" ]; then
+  rm -f build/Medtner.zip
+  ditto -c -k --keepParent "$APP" build/Medtner.zip
+  du -sh build/Medtner.zip | awk '{print "packed " $2 " (" $1 ")"}'
+fi
+
 if [ "${1:-}" = "install" ]; then
   pkill -x Medtner || true
   rm -rf /Applications/Medtner.app
