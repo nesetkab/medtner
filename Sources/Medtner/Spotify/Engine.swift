@@ -11,7 +11,7 @@ final class Engine {
     }
 
     static let deviceName = "Medtner"
-    static let eventNotification = Notification.Name("app.medtner.engine.event")
+    nonisolated static let eventNotification = Notification.Name("app.medtner.engine.event")
 
     private(set) var state: State = .off {
         didSet { onChange?(state) }
@@ -155,7 +155,7 @@ final class Engine {
         try? FileManager.default.removeItem(at: pidFile)
     }
 
-    static func handleHookInvocation() -> Bool {
+    nonisolated static func handleHookInvocation() -> Bool {
         let env = ProcessInfo.processInfo.environment
         guard env["MEDTNER_HOOK"] == "1" else { return false }
         guard let event = env["PLAYER_EVENT"] else { return true }

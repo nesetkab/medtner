@@ -4,7 +4,7 @@ import SwiftUI
 actor ArtworkStore {
     static let shared = ArtworkStore()
 
-    private let cache: NSCache<NSURL, NSImage> = {
+    nonisolated(unsafe) private let cache: NSCache<NSURL, NSImage> = {
         let cache = NSCache<NSURL, NSImage>()
         cache.countLimit = 120
         return cache

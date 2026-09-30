@@ -35,6 +35,7 @@ final class Player {
     var contextURI: String?
 
     var artwork: NSImage?
+    var recordImage: NSImage?
     var accent = Palette.defaultAccent
 
     var shelfMode: ShelfMode = .queue {
@@ -248,6 +249,7 @@ final class Player {
             guard let image = await ArtworkStore.shared.image(url), url == artURL else { return }
             let color = await Task.detached(priority: .utility) { Palette.accent(from: image) }.value
             artwork = image
+            recordImage = RecordArt.render(label: image, size: 420, accent: color)
             withAnimation(.easeInOut(duration: 0.9)) { accent = color }
         }
     }
