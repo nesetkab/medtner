@@ -143,7 +143,7 @@ final class NowPlayingRow: MenuRow {
         let clip = NSBezierPath(roundedRect: art, xRadius: 9, yRadius: 9)
         NSGraphicsContext.saveGraphicsState()
         clip.addClip()
-        if let image = player.artwork {
+        if let image = player.track == nil ? Palette.placeholder : player.artwork {
             image.draw(in: art, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
         } else {
             NSColor.labelColor.withAlphaComponent(0.1).setFill()

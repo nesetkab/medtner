@@ -58,6 +58,7 @@ enum Palette {
     static let tile = Color(white: 0.85)
     static let muted = Color(white: 0.55)
     static let defaultAccent = NSColor(red: 0.84, green: 0.72, blue: 1.0, alpha: 1)
+    static let placeholder: NSImage? = Bundle.main.url(forResource: "Cover", withExtension: "svg").flatMap(NSImage.init(contentsOf:))
 
     static func accent(from image: NSImage) -> NSColor {
         palette(from: image).first ?? defaultAccent
@@ -107,6 +108,12 @@ struct Art: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: radius, style: .continuous).fill(Palette.tile)
+            if url == nil, let placeholder = Palette.placeholder {
+                Image(nsImage: placeholder)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fill)
+            }
             if let image {
                 Image(nsImage: image)
                     .resizable()

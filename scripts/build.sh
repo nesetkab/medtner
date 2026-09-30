@@ -20,6 +20,7 @@ if [ ! -f build/AppIcon.icns ] || [ Resources/AppIcon.svg -nt build/AppIcon.icns
   iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
 fi
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/Cover.svg "$APP/Contents/Resources/Cover.svg"
 
 LIBRESPOT=$(command -v librespot || true)
 if [ -n "$LIBRESPOT" ]; then
