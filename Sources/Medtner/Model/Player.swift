@@ -455,7 +455,7 @@ final class Player {
     func open(_ tile: Tile) {
         guard let context = tile.contextURI else { return play(tile) }
         if opened?.tile.id == tile.id { return closeCollection() }
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { opened = OpenCollection(tile: tile) }
+        withAnimation(.snappy(duration: 0.2)) { opened = OpenCollection(tile: tile) }
         Task {
             let parts = context.split(separator: ":").map(String.init)
             var tracks: [Track] = []
@@ -486,7 +486,7 @@ final class Player {
     }
 
     func closeCollection() {
-        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { opened = nil }
+        withAnimation(.snappy(duration: 0.2)) { opened = nil }
     }
 
     func loadEditable() async {

@@ -70,7 +70,7 @@ struct PlayerView: View {
             TrackHeading(player: player)
                 .frame(width: searchOpen || player.opened != nil ? cover : 480, height: 104, alignment: .topLeading)
                 .zIndex(1)
-                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen || player.opened != nil)
+                .animation(.snappy(duration: 0.18), value: searchOpen || player.opened != nil)
                 .frame(width: cover, alignment: .leading)
 
             ZStack {
@@ -163,13 +163,13 @@ struct PlayerView: View {
 
     private func openSearch() {
         player.closeCollection()
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { searchOpen = true }
+        withAnimation(.snappy(duration: 0.2)) { searchOpen = true }
         player.searching = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { searchFocused = true }
+        searchFocused = true
     }
 
     private func closeSearch() {
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { searchOpen = false }
+        withAnimation(.snappy(duration: 0.2)) { searchOpen = false }
         player.searching = false
         searchFocused = false
         player.search("")
@@ -228,6 +228,7 @@ struct Marquee<Content: View>: View {
                     .onChange(of: proxy.size.width) { _, width in boxWidth = width }
             })
             .clipped()
+            .animation(.snappy(duration: 0.18), value: overflow > 0)
             .mask(
                 LinearGradient(stops: [
                     .init(color: offset < 0 ? .clear : .black, location: 0),
