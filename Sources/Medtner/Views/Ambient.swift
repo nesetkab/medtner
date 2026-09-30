@@ -30,8 +30,8 @@ final class BlobView: NSView {
             blob.type = .radial
             blob.startPoint = CGPoint(x: 0.5, y: 0.5)
             blob.endPoint = CGPoint(x: 1, y: 1)
-            blob.locations = [0, 0.45, 1]
-            blob.contentsScale = 0.5
+            blob.locations = [0, 0.18, 0.38, 0.58, 0.78, 1]
+            blob.contentsScale = 0.75
             blob.opacity = 0
             container.addSublayer(blob)
         }
@@ -48,7 +48,7 @@ final class BlobView: NSView {
             CATransaction.setAnimationDuration(1.2)
             for (i, blob) in blobs.enumerated() {
                 let color = colors[i % max(colors.count, 1)]
-                blob.colors = [color.withAlphaComponent(0.85).cgColor, color.withAlphaComponent(0.32).cgColor, color.withAlphaComponent(0).cgColor]
+                blob.colors = [0.85, 0.7, 0.45, 0.22, 0.07, 0].map { color.withAlphaComponent($0).cgColor }
             }
             CATransaction.commit()
         }

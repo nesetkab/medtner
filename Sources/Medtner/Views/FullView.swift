@@ -77,6 +77,28 @@ struct LineProgress: NSViewRepresentable {
     }
 }
 
+enum Grain {
+    static let tile: NSImage = {
+        let size = 160
+        var generator = SystemRandomNumberGenerator()
+        var pixels = [UInt8](repeating: 0, count: size * size * 4)
+        for i in 0..<(size * size) {
+            let v = UInt8.random(in: 96...160, using: &generator)
+            pixels[i * 4] = v
+            pixels[i * 4 + 1] = v
+            pixels[i * 4 + 2] = v
+            pixels[i * 4 + 3] = 38
+        }
+        let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
+                                   samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                                   bytesPerRow: size * 4, bitsPerPixel: 32)!
+        pixels.withUnsafeBytes { memcpy(rep.bitmapData!, $0.baseAddress!, size * size * 4) }
+        let image = NSImage(size: NSSize(width: size / 2, height: size / 2))
+        image.addRepresentation(rep)
+        return image
+    }()
+}
+
 struct FullView: View {
     @Bindable var player: Player
     @State private var controlsVisible = false
@@ -99,6 +121,12 @@ struct FullView: View {
                              diameter: side * 1.3, spread: 1.15, glow: 1.9)
                     .frame(width: geo.size.width * 1.2, height: geo.size.height * 1.2)
                     .position(x: geo.size.width * 0.58, y: geo.size.height * 0.42)
+                    .allowsHitTesting(false)
+
+                Image(nsImage: Grain.tile)
+                    .resizable(resizingMode: .tile)
+                    .blendMode(.overlay)
+                    .opacity(0.5)
                     .allowsHitTesting(false)
 
                 clock
