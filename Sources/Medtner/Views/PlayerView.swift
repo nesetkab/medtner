@@ -5,13 +5,21 @@ struct HoverTag: Equatable {
     let y: CGFloat
 }
 
+enum Layout {
+    static let width: CGFloat = 880
+    static let height: CGFloat = 570
+    static let cover: CGFloat = 282
+    static let tile: CGFloat = 116
+    static let margin: CGFloat = 30
+}
+
 struct PlayerView: View {
     @Bindable var player: Player
     @State private var searchOpen = false
     @State private var hoverTag: HoverTag?
     @FocusState private var searchFocused: Bool
 
-    private let cover: CGFloat = 222
+    private let cover = Layout.cover
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -21,24 +29,24 @@ struct PlayerView: View {
 
             HStack(alignment: .top, spacing: 0) {
                 SeekRail(player: player)
-                    .padding(.top, 46)
-                    .padding(.bottom, 28)
-                    .padding(.leading, 18)
+                    .padding(.top, 50)
+                    .padding(.bottom, Layout.margin + 2)
+                    .padding(.leading, 20)
                     .zIndex(4)
 
                 leftColumn
-                    .padding(.leading, 26)
-                    .padding(.vertical, 26)
-                    .zIndex(2)
+                    .padding(.leading, 30)
+                    .padding(.vertical, Layout.margin)
+                    .zIndex(0)
 
                 center
-                    .padding(.vertical, 26)
-                    .padding(.horizontal, 18)
+                    .padding(.vertical, Layout.margin)
+                    .padding(.horizontal, 24)
                     .zIndex(1)
 
                 ShelfColumn(player: player, hoverTag: $hoverTag)
-                    .frame(width: 100)
-                    .padding(.trailing, 26)
+                    .frame(width: Layout.tile)
+                    .padding(.trailing, Layout.margin)
                     .zIndex(3)
             }
         }
@@ -51,7 +59,7 @@ struct PlayerView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .frame(width: 716, height: 465)
+        .frame(width: Layout.width, height: Layout.height)
         .foregroundStyle(.white)
         .onReceive(NotificationCenter.default.publisher(for: .medtnerSearch)) { _ in openSearch() }
     }
@@ -59,25 +67,29 @@ struct PlayerView: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             TrackHeading(player: player)
-                .frame(width: searchOpen || player.opened != nil ? cover + 20 : 400, height: 92, alignment: .topLeading)
+                .frame(width: searchOpen || player.opened != nil ? cover + 20 : 480, height: 104, alignment: .topLeading)
+                .zIndex(1)
                 .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen || player.opened != nil)
                 .frame(width: cover, alignment: .leading)
 
             ZStack {
-                AmbientRipples(color: player.accent, active: player.isPlaying, size: cover, radius: 22)
-                    .frame(width: cover * 1.3, height: cover * 1.3)
+                AmbientBlobs(player: player, colors: player.palette, playing: player.isPlaying, diameter: cover)
+                    .frame(width: cover * 2.2, height: cover * 2.2)
                     .allowsHitTesting(false)
                 CoverArt(player: player, size: cover)
                     .trackMenu(player.track?.uri, player: player)
             }
             .frame(width: cover, height: cover)
+            .zIndex(-1)
 
-            Spacer(minLength: 16)
+            Spacer(minLength: 18)
 
             VolumeBar(player: player, width: cover - 36)
-                .padding(.bottom, 20)
+                .padding(.bottom, 24)
+                .zIndex(1)
 
-            Transport(player: player, spacing: 22, extras: true)
+            Transport(player: player, size: 20, spacing: 28, extras: true)
+                .zIndex(1)
         }
         .frame(width: cover, alignment: .leading)
     }
@@ -139,8 +151,8 @@ struct PlayerView: View {
                     .foregroundStyle(Palette.muted)
             }
             .lineLimit(1)
-            .frame(maxWidth: 220, alignment: .trailing)
-            .padding(.trailing, 146)
+            .frame(maxWidth: 280, alignment: .trailing)
+            .padding(.trailing, Layout.tile + Layout.margin + 22)
             .offset(y: hoverTag.y - 20)
             .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             .id(hoverTag.tile.id)
@@ -171,15 +183,15 @@ struct TrackHeading: View {
             let title = player.track?.name ?? "Medtner"
             let artist = player.track?.artistLine ?? (player.phase == .ready ? "Press play" : "Not connected")
             Text(title)
-                .font(.system(size: 46, weight: .bold))
-                .tracking(-1.8)
+                .font(.system(size: 54, weight: .bold))
+                .tracking(-2.2)
                 .lineLimit(1)
                 .minimumScaleFactor(0.45)
                 .id("t-" + title)
                 .transition(TextReveal())
             Text(artist)
-                .font(.system(size: 23, weight: .regular))
-                .tracking(-0.8)
+                .font(.system(size: 26, weight: .regular))
+                .tracking(-0.9)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .id("a-" + artist)
@@ -195,8 +207,8 @@ struct CoverArt: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Palette.tile)
-            Art(url: player.artURL600, radius: 22)
+            RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Palette.tile)
+            Art(url: player.artURL600, radius: 26)
                 .id(player.artURL600)
                 .transition(
                     .asymmetric(
@@ -206,7 +218,7 @@ struct CoverArt: View {
                 )
         }
         .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
         .scaleEffect(player.isPlaying ? 1 : 0.96)
         .shadow(color: .black.opacity(0.5), radius: player.isPlaying ? 18 : 8, y: 8)
         .animation(.spring(response: 0.5, dampingFraction: 0.6), value: player.isPlaying)

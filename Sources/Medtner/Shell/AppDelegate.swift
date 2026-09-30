@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func buildWindow() {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 716, height: 465),
+            contentRect: NSRect(x: 0, y: 0, width: Layout.width, height: Layout.height),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
@@ -68,10 +68,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let host = NSHostingView(rootView: RootView(player: player))
         host.sizingOptions = []
         window.contentView = host
-        window.setContentSize(NSSize(width: 716, height: 465))
+        window.setContentSize(NSSize(width: Layout.width, height: Layout.height))
         window.setFrameAutosaveName("MedtnerMain")
         if !window.setFrameUsingName("MedtnerMain") { window.center() }
-        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: 716, height: 465)), display: false)
+        window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: Layout.width, height: Layout.height)), display: false)
         NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }

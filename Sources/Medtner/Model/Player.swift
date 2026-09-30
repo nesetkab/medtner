@@ -43,6 +43,7 @@ final class Player {
 
     var artwork: NSImage?
     var accent = Palette.defaultAccent
+    var palette: [NSColor] = [Palette.defaultAccent]
 
     var shelfMode: ShelfMode = ShelfMode(rawValue: UserDefaults.standard.string(forKey: "shelf") ?? "") ?? .recent {
         didSet {
@@ -283,8 +284,10 @@ final class Player {
         guard let url else { return }
         Task {
             guard let image = await ArtworkStore.shared.image(url), url == artURL else { return }
-            let color = await Task.detached(priority: .utility) { Palette.accent(from: image) }.value
+            let colors = await Task.detached(priority: .utility) { Palette.palette(from: image) }.value
+            let color = colors.first ?? Palette.defaultAccent
             artwork = image
+            palette = colors
             withAnimation(.easeInOut(duration: 0.9)) { accent = color }
         }
     }

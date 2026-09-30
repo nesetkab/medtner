@@ -6,7 +6,7 @@ struct ShelfColumn: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 20) {
+            LazyVStack(spacing: 22) {
                 ForEach(Array(player.shelf.enumerated()), id: \.element.id) { index, tile in
                     ShelfTile(tile: tile, index: index, accent: player.accentColor) { hovering, y in
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
@@ -39,11 +39,11 @@ struct ShelfColumn: View {
                     ForEach(0..<4, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .fill(Color(white: 0.16))
-                            .frame(width: 100, height: 100)
+                            .frame(width: Layout.tile, height: Layout.tile)
                     }
                 }
             }
-            .padding(.vertical, 28)
+            .padding(.vertical, Layout.margin)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: player.shelf.map(\.id))
         }
         .scrollClipDisabled(false)
@@ -116,7 +116,7 @@ struct ShelfTile: View {
                 onHover(hover, geo.frame(in: .named("root")).midY)
             }
         }
-        .frame(width: 100, height: 100)
+        .frame(width: Layout.tile, height: Layout.tile)
         .offset(x: appeared ? 0 : 60)
         .opacity(appeared ? 1 : 0)
         .onAppear {
@@ -139,7 +139,7 @@ struct ShelfTabs: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text(mode.rawValue)
-                            .font(.system(size: 13, weight: player.shelfMode == mode ? .bold : .medium))
+                            .font(.system(size: 14, weight: player.shelfMode == mode ? .bold : .medium))
                             .foregroundStyle(player.shelfMode == mode ? Color.white : Palette.muted)
                         ZStack {
                             if player.shelfMode == mode {
@@ -167,7 +167,7 @@ struct SearchField: View {
             TextField("", text: Binding(get: { player.searchText }, set: { player.search($0) }),
                       prompt: Text("Search").foregroundStyle(Color(white: 0.35)))
                 .textFieldStyle(.plain)
-                .font(.system(size: 22, weight: .bold))
+                .font(.system(size: 24, weight: .bold))
                 .tracking(-0.6)
                 .focused(focused)
                 .onSubmit {

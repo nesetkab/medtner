@@ -43,6 +43,10 @@ enum Palette {
     static let defaultAccent = NSColor(red: 0.84, green: 0.72, blue: 1.0, alpha: 1)
 
     static func accent(from image: NSImage) -> NSColor {
+        palette(from: image).first ?? defaultAccent
+    }
+
+    static func palette(from image: NSImage) -> [NSColor] {
         let size = 24
         guard
             let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
@@ -50,29 +54,31 @@ enum Palette {
                 data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: size * 4,
                 space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )
-        else { return defaultAccent }
+        else { return [defaultAccent] }
         context.interpolationQuality = .medium
         context.draw(cg, in: CGRect(x: 0, y: 0, width: size, height: size))
-        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return defaultAccent }
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return [defaultAccent] }
 
         var buckets: [Int: (score: Double, r: Double, g: Double, b: Double, n: Double)] = [:]
         for i in 0..<(size * size) {
             let r = Double(data[i * 4]) / 255, g = Double(data[i * 4 + 1]) / 255, b = Double(data[i * 4 + 2]) / 255
-            let color = NSColor(red: r, green: g, blue: b, alpha: 1)
             var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0
-            color.getHue(&h, saturation: &s, brightness: &v, alpha: nil)
-            guard s > 0.25, v > 0.3 else { continue }
-            let key = Int(h * 12)
+            NSColor(red: r, green: g, blue: b, alpha: 1).getHue(&h, saturation: &s, brightness: &v, alpha: nil)
+            guard s > 0.2, v > 0.25 else { continue }
+            let key = Int(h * 12) % 12
             var bucket = buckets[key] ?? (0, 0, 0, 0, 0)
             bucket.score += Double(s * s) * Double(v)
             bucket.r += r; bucket.g += g; bucket.b += b; bucket.n += 1
             buckets[key] = bucket
         }
-        guard let top = buckets.values.max(by: { $0.score < $1.score }), top.n > 2 else { return defaultAccent }
-        let base = NSColor(red: top.r / top.n, green: top.g / top.n, blue: top.b / top.n, alpha: 1)
-        var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0
-        base.getHue(&h, saturation: &s, brightness: &v, alpha: nil)
-        return NSColor(hue: h, saturation: min(max(s, 0.45), 0.85), brightness: max(v, 0.88), alpha: 1)
+        let ranked = buckets.values.filter { $0.n > 2 }.sorted { $0.score > $1.score }
+        let colors = ranked.prefix(3).map { bucket -> NSColor in
+            let base = NSColor(red: bucket.r / bucket.n, green: bucket.g / bucket.n, blue: bucket.b / bucket.n, alpha: 1)
+            var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0
+            base.getHue(&h, saturation: &s, brightness: &v, alpha: nil)
+            return NSColor(hue: h, saturation: min(max(s, 0.45), 0.85), brightness: max(v, 0.88), alpha: 1)
+        }
+        return colors.isEmpty ? [defaultAccent] : colors
     }
 }
 

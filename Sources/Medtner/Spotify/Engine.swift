@@ -65,7 +65,7 @@ final class Engine {
             "--autoplay", "on",
             "--quiet",
         ]
-        if let hook = Bundle.main.executableURL {
+        if let hook = Bundle.main.url(forAuxiliaryExecutable: "medtner-hook") ?? Bundle.main.executableURL {
             args += ["--onevent", hook.path]
         }
         if !hasCredentials {

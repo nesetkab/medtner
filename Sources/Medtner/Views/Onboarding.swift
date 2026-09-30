@@ -61,7 +61,7 @@ struct Onboarding: View {
             .padding(.trailing, 40)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(width: 716, height: 465)
+        .frame(width: Layout.width, height: Layout.height)
         .background(Palette.background)
         .foregroundStyle(.white)
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: player.phase)
@@ -70,9 +70,9 @@ struct Onboarding: View {
     private var progressOffset: CGFloat {
         switch player.phase {
         case .needsClientID: 0
-        case .needsSignIn: 130
-        case .needsEngineLogin: 260
-        case .ready: 390
+        case .needsSignIn: 160
+        case .needsEngineLogin: 320
+        case .ready: 480
         }
     }
 

@@ -11,6 +11,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 swiftc -O -wmo -target arm64-apple-macos15.0 -swift-version 5 \
   $(find Sources -name '*.swift') -o "$APP/Contents/MacOS/Medtner"
 strip -x "$APP/Contents/MacOS/Medtner"
+clang -O2 -framework CoreFoundation -mmacosx-version-min=15.0 Hook/hook.c -o "$APP/Contents/MacOS/medtner-hook"
+strip -x "$APP/Contents/MacOS/medtner-hook"
 
 if [ ! -f build/AppIcon.icns ] || [ Resources/AppIcon.svg -nt build/AppIcon.icns ]; then
   rm -rf build/AppIcon.iconset

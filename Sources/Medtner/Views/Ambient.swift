@@ -2,20 +2,35 @@ import AppKit
 import QuartzCore
 import SwiftUI
 
-final class RippleView: NSView {
-    private let rings: [CAShapeLayer] = (0..<3).map { _ in CAShapeLayer() }
-    private var active = false
-    private var cover: CGFloat = 0
-    private var radius: CGFloat = 0
+final class BlobView: NSView {
+    private let container = CALayer()
+    private let blobs: [CAGradientLayer] = (0..<4).map { _ in CAGradientLayer() }
+    private var smoothed: [CGFloat] = [0, 0, 0, 0]
+    private var playing = false
+    private var reactive = false
+    private var lastLevels = Date.distantPast
+    private var colors: [NSColor] = []
+    private var diameter: CGFloat = 0
+    private var watchdog: Timer?
+
+    private let anchors: [CGPoint] = [
+        CGPoint(x: -0.26, y: -0.24),
+        CGPoint(x: 0.3, y: 0.26),
+        CGPoint(x: 0.28, y: -0.3),
+        CGPoint(x: -0.3, y: 0.3),
+    ]
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
-        for ring in rings {
-            ring.fillColor = nil
-            ring.lineWidth = 1.5
-            ring.opacity = 0
-            layer?.addSublayer(ring)
+        layer?.addSublayer(container)
+        for blob in blobs {
+            blob.type = .radial
+            blob.startPoint = CGPoint(x: 0.5, y: 0.5)
+            blob.endPoint = CGPoint(x: 1, y: 1)
+            blob.locations = [0, 0.45, 1]
+            blob.opacity = 0
+            container.addSublayer(blob)
         }
     }
 
@@ -23,79 +38,137 @@ final class RippleView: NSView {
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    func update(color: NSColor, active: Bool, cover: CGFloat, radius: CGFloat) {
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.9)
-        for ring in rings { ring.strokeColor = color.cgColor }
-        CATransaction.commit()
-        let sizeChanged = cover != self.cover || radius != self.radius
-        self.cover = cover
-        self.radius = radius
-        if sizeChanged { needsLayout = true }
-        guard active != self.active else { return }
-        self.active = active
-        active ? start() : stop()
+    func update(colors: [NSColor], playing: Bool, diameter: CGFloat) {
+        if colors != self.colors {
+            self.colors = colors
+            CATransaction.begin()
+            CATransaction.setAnimationDuration(1.2)
+            for (i, blob) in blobs.enumerated() {
+                let color = colors[i % max(colors.count, 1)]
+                blob.colors = [color.withAlphaComponent(0.85).cgColor, color.withAlphaComponent(0.32).cgColor, color.withAlphaComponent(0).cgColor]
+            }
+            CATransaction.commit()
+        }
+        if diameter != self.diameter {
+            self.diameter = diameter
+            needsLayout = true
+        }
+        guard playing != self.playing else { return }
+        self.playing = playing
+        playing ? begin() : end()
     }
 
     override func layout() {
         super.layout()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        let rect = CGRect(x: (bounds.width - cover) / 2, y: (bounds.height - cover) / 2, width: cover, height: cover)
-        let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
-        for ring in rings {
-            ring.frame = bounds
-            ring.path = path
+        container.frame = bounds
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        for (i, blob) in blobs.enumerated() {
+            let size = diameter * (i == 0 ? 1.05 : 0.85)
+            blob.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            blob.position = CGPoint(x: center.x + anchors[i].x * diameter, y: center.y + anchors[i].y * diameter)
         }
         CATransaction.commit()
-        if active { start() }
     }
 
-    private func start() {
-        let now = CACurrentMediaTime()
-        for (i, ring) in rings.enumerated() {
-            ring.removeAllAnimations()
-            let grow = CABasicAnimation(keyPath: "transform.scale")
-            grow.fromValue = 1.0
-            grow.toValue = 1.22
-            let fade = CAKeyframeAnimation(keyPath: "opacity")
-            fade.values = [0, 0.55, 0]
-            fade.keyTimes = [0, 0.15, 1]
-            let group = CAAnimationGroup()
-            group.animations = [grow, fade]
-            group.duration = 4.2
-            group.repeatCount = .infinity
-            group.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.6, 0.3, 1)
-            group.beginTime = now + Double(i) * 1.4
-            group.fillMode = .backwards
-            ring.add(group, forKey: "ripple")
+    func receive(_ levels: [Float]) {
+        guard playing, window?.occlusionState.contains(.visible) == true else { return }
+        lastLevels = Date()
+        if !reactive {
+            reactive = true
+            for blob in blobs { blob.removeAnimation(forKey: "idle") }
+        }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.09)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+        for (i, blob) in blobs.enumerated() {
+            let target = CGFloat(levels[i])
+            let rate: CGFloat = target > smoothed[i] ? 0.55 : 0.14
+            smoothed[i] += (target - smoothed[i]) * rate
+            let scale = 0.7 + smoothed[i] * 0.55
+            blob.transform = CATransform3DMakeScale(scale, scale, 1)
+            blob.opacity = Float(0.3 + smoothed[i] * 0.5)
+        }
+        CATransaction.commit()
+    }
+
+    private func begin() {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.8)
+        for blob in blobs { blob.opacity = 0.45 }
+        CATransaction.commit()
+
+        let drift = CABasicAnimation(keyPath: "transform.rotation.z")
+        drift.fromValue = 0
+        drift.toValue = Double.pi * 2
+        drift.duration = 48
+        drift.repeatCount = .infinity
+        container.add(drift, forKey: "drift")
+
+        reactive = false
+        startIdlePulse()
+        watchdog?.invalidate()
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self, self.reactive, Date().timeIntervalSince(self.lastLevels) > 0.6 else { return }
+            self.reactive = false
+            self.startIdlePulse()
+        }
+        timer.tolerance = 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        watchdog = timer
+    }
+
+    private func startIdlePulse() {
+        for (i, blob) in blobs.enumerated() {
+            blob.transform = CATransform3DMakeScale(0.85, 0.85, 1)
+            let pulse = CABasicAnimation(keyPath: "transform.scale")
+            pulse.fromValue = 0.72
+            pulse.toValue = [1.08, 0.95, 1.12, 0.9][i]
+            pulse.duration = [0.9, 1.3, 1.1, 1.6][i]
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            pulse.timeOffset = Double(i) * 0.37
+            blob.add(pulse, forKey: "idle")
         }
     }
 
-    private func stop() {
-        for ring in rings {
-            let current = ring.presentation()?.opacity ?? 0
-            ring.removeAllAnimations()
-            ring.opacity = current
-            let fade = CABasicAnimation(keyPath: "opacity")
-            fade.fromValue = current
-            fade.toValue = 0
-            fade.duration = 0.6
-            ring.add(fade, forKey: "out")
-            ring.opacity = 0
+    private func end() {
+        watchdog?.invalidate()
+        watchdog = nil
+        reactive = false
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.9)
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self, !self.playing else { return }
+            self.container.removeAnimation(forKey: "drift")
+            for blob in self.blobs { blob.removeAnimation(forKey: "idle") }
         }
+        for (i, blob) in blobs.enumerated() {
+            blob.opacity = 0
+            blob.transform = CATransform3DMakeScale(0.6, 0.6, 1)
+            smoothed[i] = 0
+        }
+        CATransaction.commit()
     }
 }
 
-struct AmbientRipples: NSViewRepresentable {
-    let color: NSColor
-    let active: Bool
-    let size: CGFloat
-    let radius: CGFloat
+struct AmbientBlobs: NSViewRepresentable {
+    let player: Player
+    let colors: [NSColor]
+    let playing: Bool
+    let diameter: CGFloat
 
-    func makeNSView(context: Context) -> RippleView { RippleView(frame: .zero) }
+    func makeNSView(context: Context) -> BlobView {
+        let view = BlobView(frame: .zero)
+        player.engine.audio.onLevels = { [weak view] levels in
+            DispatchQueue.main.async { view?.receive(levels) }
+        }
+        return view
+    }
 
-    func updateNSView(_ view: RippleView, context: Context) {
-        view.update(color: color, active: active, cover: size, radius: radius)
+    func updateNSView(_ view: BlobView, context: Context) {
+        view.update(colors: colors, playing: playing, diameter: diameter)
     }
 }
