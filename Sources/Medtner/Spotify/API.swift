@@ -44,6 +44,29 @@ struct API {
         return response?.items.compactMap { $0 } ?? []
     }
 
+    func playlistTracks(_ id: String) async throws -> [Track] {
+        let response: Paged<PlaylistEntry>? = try await get("playlists/\(id)/items", query: ["limit": "50"])
+        return response?.items.compactMap { $0?.content } ?? []
+    }
+
+    func likedTracks() async throws -> [Track] {
+        let response: Paged<SavedTrack>? = try await get("me/tracks", query: ["limit": "50"])
+        return response?.items.compactMap { $0?.track } ?? []
+    }
+
+    func albumTracks(_ id: String) async throws -> [Track] {
+        let response: Paged<Track>? = try await get("albums/\(id)/tracks", query: ["limit": "50"])
+        return response?.items.compactMap { $0 } ?? []
+    }
+
+    func addToPlaylist(_ id: String, uris: [String]) async throws {
+        try await send("POST", "playlists/\(id)/items", body: ["uris": uris])
+    }
+
+    func saveToLibrary(_ uris: [String]) async throws {
+        try await send("PUT", "me/library", body: ["uris": uris])
+    }
+
     func search(_ text: String) async throws -> SearchResponse? {
         try await get("search", query: ["q": text, "type": "track,album,playlist", "limit": "10"])
     }

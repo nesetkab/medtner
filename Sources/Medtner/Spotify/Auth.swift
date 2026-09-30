@@ -6,6 +6,7 @@ struct Tokens: Codable {
     var access: String
     var refresh: String
     var expires: Date
+    var scope: String?
 }
 
 enum AuthError: Error {
@@ -24,7 +25,10 @@ actor Auth {
         "user-read-recently-played",
         "playlist-read-private",
         "playlist-read-collaborative",
+        "playlist-modify-private",
+        "playlist-modify-public",
         "user-library-read",
+        "user-library-modify",
     ].joined(separator: " ")
 
     private var tokens: Tokens?
@@ -39,7 +43,10 @@ actor Auth {
         return (id?.isEmpty ?? true) ? nil : id
     }
 
-    var isSignedIn: Bool { tokens != nil }
+    var isSignedIn: Bool {
+        guard let granted = tokens?.scope?.split(separator: " ").map(String.init) else { return false }
+        return Set(Self.scopes.split(separator: " ").map(String.init)).isSubset(of: granted)
+    }
 
     func signOut() {
         tokens = nil
@@ -121,10 +128,12 @@ actor Auth {
             let access_token: String
             let refresh_token: String?
             let expires_in: Double
+            let scope: String?
         }
         let body = try JSONDecoder().decode(Body.self, from: data)
         guard let refresh = body.refresh_token ?? previousRefresh else { throw AuthError.denied }
-        let tokens = Tokens(access: body.access_token, refresh: refresh, expires: Date().addingTimeInterval(body.expires_in))
+        let tokens = Tokens(access: body.access_token, refresh: refresh,
+                            expires: Date().addingTimeInterval(body.expires_in), scope: body.scope ?? self.tokens?.scope)
         Storage.save(tokens, "tokens.json")
         return tokens
     }

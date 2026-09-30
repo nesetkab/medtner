@@ -41,10 +41,11 @@ struct SeekRail: View {
                             }
                         }
                         .offset(y: y)
-                        .animation(dragFraction == nil ? .linear(duration: 1) : .interactiveSpring, value: y)
+                        .animation(dragFraction == nil ? nil : .interactiveSpring, value: y)
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
+                .pointerStyle(.link)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in

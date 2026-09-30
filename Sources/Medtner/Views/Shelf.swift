@@ -20,9 +20,16 @@ struct ShelfColumn: View {
                         if player.shelfMode == .queue {
                             player.playFromQueue(index)
                         } else {
+                            player.open(tile)
+                        }
+                    } play: {
+                        if player.shelfMode == .queue {
+                            player.playFromQueue(index)
+                        } else {
                             player.play(tile)
                         }
                     }
+                    .trackMenu(player.shelfMode == .queue ? tile.playURI : nil, player: player)
                     .transition(.asymmetric(
                         insertion: .offset(x: 130).combined(with: .opacity),
                         removal: .opacity
@@ -57,39 +64,51 @@ struct ShelfTile: View {
     let accent: Color
     let onHover: (Bool, CGFloat) -> Void
     let action: () -> Void
+    let play: () -> Void
     @State private var hovering = false
     @State private var appeared = false
 
     var body: some View {
         GeometryReader { geo in
-            Button(action: action) {
-                Group {
-                    if let symbol = tile.symbol {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(accent)
-                            .overlay {
-                                Image(systemName: symbol)
-                                    .font(.system(size: 30, weight: .semibold))
-                                    .foregroundStyle(.black.opacity(0.75))
-                            }
-                    } else {
-                        Art(url: tile.art, radius: 18)
-                    }
+            Group {
+                if let symbol = tile.symbol {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(accent)
+                        .overlay {
+                            Image(systemName: symbol)
+                                .font(.system(size: 30, weight: .semibold))
+                                .foregroundStyle(.black.opacity(0.75))
+                        }
+                } else {
+                    Art(url: tile.art, radius: 18)
                 }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .strokeBorder(accent, lineWidth: hovering ? 3 : 0)
-                    }
-                    .overlay {
-                        Image(systemName: "play.fill")
-                            .font(.system(size: 26, weight: .black))
-                            .foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.6), radius: 8)
-                            .scaleEffect(hovering ? 1 : 0.4)
-                            .opacity(hovering ? 1 : 0)
-                    }
             }
-            .buttonStyle(PressStyle(scale: 0.9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(accent, lineWidth: hovering ? 3 : 0)
+            }
+            .overlay(alignment: .bottomTrailing) {
+                Button(action: play) {
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 30, height: 30)
+                        .overlay(
+                            Soft(shape: PlayPauseShape(progress: 0), corner: 1.1)
+                                .foregroundStyle(.black.opacity(0.8))
+                                .frame(width: 10, height: 12)
+                                .offset(x: 1)
+                        )
+                        .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
+                }
+                .buttonStyle(PressStyle(scale: 0.85))
+                .help("Play")
+                .padding(7)
+                .scaleEffect(hovering ? 1 : 0.4, anchor: .bottomTrailing)
+                .opacity(hovering ? 1 : 0)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .pointerStyle(.link)
+            .onTapGesture(perform: action)
             .scaleEffect(hovering ? 1.06 : 1)
             .rotationEffect(.degrees(hovering ? (index.isMultiple(of: 2) ? -2.5 : 2.5) : 0))
             .onHover { hover in
@@ -173,12 +192,17 @@ struct SearchResults: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(player.searchResults.enumerated()), id: \.element.id) { index, tile in
-                    SearchRow(tile: tile, index: index, accent: player.accentColor) {
-                        player.play(tile)
+                    SearchRow(tile: tile, index: index, accent: player.accentColor, current: false) {
+                        if tile.playURI.contains(":track:") {
+                            player.play(tile)
+                        } else {
+                            player.open(tile)
+                        }
                         close()
                     } enqueue: {
-                        player.enqueue(tile)
+                        player.queueUp(tile.playURI)
                     }
+                    .trackMenu(tile.playURI, player: player)
                 }
             }
             .padding(.top, 10)
@@ -190,6 +214,7 @@ struct SearchRow: View {
     let tile: Tile
     let index: Int
     let accent: Color
+    let current: Bool
     let play: () -> Void
     let enqueue: () -> Void
     @State private var hovering = false
@@ -203,6 +228,7 @@ struct SearchRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(tile.title)
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(current ? accent : .white)
                     .lineLimit(1)
                 Text(tile.subtitle)
                     .font(.system(size: 11, weight: .medium))
@@ -232,6 +258,7 @@ struct SearchRow: View {
                 .fill(hovering ? Color(white: 0.16) : .clear)
         )
         .contentShape(Rectangle())
+        .pointerStyle(.link)
         .onTapGesture(perform: play)
         .onHover { hover in withAnimation(.easeOut(duration: 0.15)) { hovering = hover } }
         .offset(y: appeared ? 0 : 14)

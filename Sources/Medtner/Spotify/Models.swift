@@ -97,10 +97,22 @@ struct Playlist: Codable, Hashable {
     let uri: String
     let images: [SpotifyImage]?
     let owner: Owner?
+    let collaborative: Bool?
 
     struct Owner: Codable, Hashable {
+        let id: String?
         let display_name: String?
     }
+}
+
+struct PlaylistEntry: Codable {
+    let item: Track?
+    let track: Track?
+    var content: Track? { item ?? track }
+}
+
+struct SavedTrack: Codable {
+    let track: Track
 }
 
 struct SearchResponse: Codable {

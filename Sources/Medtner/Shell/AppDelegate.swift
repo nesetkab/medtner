@@ -261,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             guard flags.subtracting([.function, .numericPad]).isEmpty else { return event }
             switch event.keyCode {
+            case 53: self.player.closeCollection()
             case 49: self.player.togglePlay()
             case 123: self.player.previous()
             case 124: self.player.next()

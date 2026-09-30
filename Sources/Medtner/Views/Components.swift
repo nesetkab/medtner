@@ -6,6 +6,7 @@ struct PressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .contentShape(Rectangle().inset(by: -8))
+            .pointerStyle(.link)
             .scaleEffect(configuration.isPressed ? scale : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
     }
@@ -172,6 +173,7 @@ struct VolumeBar: View {
                 }
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
+                .pointerStyle(.link)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in

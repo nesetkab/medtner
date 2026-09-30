@@ -13,11 +13,11 @@ struct ThinProgress: View {
                     Capsule().fill(Color(white: 0.25))
                     Capsule().fill(player.accentColor)
                         .frame(width: max(height, geo.size.width * fraction))
-                        .animation(drag == nil ? .linear(duration: 1) : nil, value: fraction)
                 }
                 .frame(height: height)
                 .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
+                .pointerStyle(.link)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { drag = min(max($0.location.x / geo.size.width, 0), 1) }

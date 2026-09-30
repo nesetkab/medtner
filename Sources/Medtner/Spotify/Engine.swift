@@ -57,7 +57,7 @@ final class Engine {
             "--cache-size-limit", "512M",
             "--disable-discovery",
             "--initial-volume", String(volume),
-            "--volume-ctrl", "log",
+            "--volume-ctrl", "cubic",
             "--enable-volume-normalisation",
             "--autoplay", "on",
             "--quiet",

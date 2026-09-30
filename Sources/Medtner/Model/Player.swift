@@ -9,6 +9,13 @@ enum ShelfMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+struct OpenCollection: Equatable {
+    let tile: Tile
+    var tracks: [Tile] = []
+    var loading = true
+    var note: String?
+}
+
 enum Phase: Equatable {
     case needsClientID
     case needsSignIn
@@ -48,6 +55,10 @@ final class Player {
     var recent: [Tile] = []
     var playlists: [Tile] = []
 
+    var opened: OpenCollection?
+    var editable: [Tile] = []
+    var toast: String?
+
     var searchText = ""
     var searchResults: [Tile] = []
     var searching = false
@@ -67,6 +78,7 @@ final class Player {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var holdUntil = Date.distantPast
     @ObservationIgnored private var volumeTask: Task<Void, Never>?
+    @ObservationIgnored private var volumeQuietUntil = Date.distantPast
     @ObservationIgnored private var artURL: URL?
     @ObservationIgnored private var userID: String?
 
@@ -121,6 +133,7 @@ final class Player {
             phase = engine.hasCredentials ? .ready : .needsEngineLogin
             startLoop()
             await loadShelf()
+            await loadEditable()
         }
     }
 
@@ -240,7 +253,7 @@ final class Player {
         device = state.device
         shuffle = state.shuffle_state ?? false
         contextURI = state.context?.uri
-        if let v = state.device?.volume_percent, volumeTask == nil { volume = v }
+        if let v = state.device?.volume_percent, volumeTask == nil, Date() > volumeQuietUntil { volume = v }
     }
 
     private func loadArtwork() {
@@ -350,15 +363,20 @@ final class Player {
     }
 
     func setVolume(_ value: Int) {
-        volume = min(max(value, 0), 100)
-        UserDefaults.standard.set(volume, forKey: "engineVolume")
-        volumeTask?.cancel()
+        let clamped = min(max(value, 0), 100)
+        volumeQuietUntil = Date().addingTimeInterval(2.5)
+        guard clamped != volume || volumeTask == nil else { return }
+        volume = clamped
+        UserDefaults.standard.set(clamped, forKey: "engineVolume")
+        guard volumeTask == nil else { return }
         volumeTask = Task {
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            try? await api.volume(volume)
-            try? await Task.sleep(for: .seconds(1))
-            if !Task.isCancelled { volumeTask = nil }
+            var sent = -1
+            while sent != volume {
+                sent = volume
+                try? await api.volume(sent)
+                try? await Task.sleep(for: .milliseconds(90))
+            }
+            volumeTask = nil
         }
     }
 
@@ -400,6 +418,92 @@ final class Player {
 
     func loadDevices() async {
         if let list = try? await api.devices() { devices = list }
+    }
+
+    func open(_ tile: Tile) {
+        guard let context = tile.contextURI else { return play(tile) }
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { opened = OpenCollection(tile: tile) }
+        Task {
+            let parts = context.split(separator: ":").map(String.init)
+            var tracks: [Track] = []
+            var note: String?
+            do {
+                if parts.last == "collection" {
+                    tracks = try await api.likedTracks()
+                } else if parts.count == 3, parts[1] == "playlist" {
+                    tracks = try await api.playlistTracks(parts[2])
+                    if tracks.isEmpty { note = "Spotify only shares the songs in playlists you own. Press play to hear it." }
+                } else if parts.count == 3, parts[1] == "album" {
+                    tracks = try await api.albumTracks(parts[2])
+                }
+            } catch {
+                note = "Spotify only shares the songs in playlists you own. Press play to hear it."
+            }
+            guard opened?.tile.id == tile.id else { return }
+            let rows = tracks.enumerated().map { index, track in
+                Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
+                     art: track.artwork.best(near: 120) ?? tile.art, playURI: track.uri, contextURI: context)
+            }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                opened?.tracks = rows
+                opened?.loading = false
+                opened?.note = note
+            }
+        }
+    }
+
+    func closeCollection() {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) { opened = nil }
+    }
+
+    func loadEditable() async {
+        if userID == nil { userID = try? await api.me()?.id }
+        guard let lists = try? await api.playlists() else { return }
+        editable = lists
+            .filter { $0.owner?.id == userID || $0.collaborative == true }
+            .map { Tile(id: $0.id, title: $0.name, subtitle: "", art: nil, playURI: $0.uri, contextURI: $0.uri) }
+    }
+
+    func add(_ uri: String, to playlist: Tile) {
+        Task {
+            do {
+                try await api.addToPlaylist(playlist.id, uris: [uri])
+                flash("Added to \(playlist.title)")
+            } catch {
+                flash("Couldn't add to \(playlist.title)")
+            }
+        }
+    }
+
+    func like(_ uri: String) {
+        Task {
+            do {
+                try await api.saveToLibrary([uri])
+                flash("Saved to Liked Songs")
+            } catch {
+                flash("Couldn't save that one")
+            }
+        }
+    }
+
+    func queueUp(_ uri: String) {
+        Task {
+            do {
+                try await api.addToQueue(uri)
+                flash("Added to queue")
+                if shelfMode == .queue { await loadShelf() }
+            } catch {
+                flash("Couldn't queue that one")
+            }
+        }
+    }
+
+    private func flash(_ message: String) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) { toast = message }
+        Task {
+            try? await Task.sleep(for: .seconds(1.8))
+            if toast == message { withAnimation(.easeOut(duration: 0.25)) { toast = nil } }
+        }
     }
 
     func loadShelf() async {

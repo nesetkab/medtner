@@ -22,7 +22,8 @@ struct PlayerView: View {
 
             HStack(alignment: .top, spacing: 0) {
                 SeekRail(player: player)
-                    .padding(.vertical, 30)
+                    .padding(.top, 46)
+                    .padding(.bottom, 28)
                     .padding(.leading, 18)
                     .zIndex(4)
 
@@ -44,6 +45,13 @@ struct PlayerView: View {
         }
         .coordinateSpace(name: "root")
         .overlay(alignment: .topTrailing) { hoverLabel }
+        .overlay(alignment: .bottom) {
+            if let toast = player.toast {
+                Toast(text: toast, accent: player.accentColor)
+                    .padding(.bottom, 22)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .frame(width: 716, height: 465)
         .foregroundStyle(.white)
         .onReceive(NotificationCenter.default.publisher(for: .medtnerSearch)) { _ in openSearch() }
@@ -55,8 +63,8 @@ struct PlayerView: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             TrackHeading(player: player)
-                .frame(width: searchOpen ? cover + 20 : 400, height: 92, alignment: .topLeading)
-                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen)
+                .frame(width: searchOpen || player.opened != nil ? cover + 20 : 400, height: 92, alignment: .topLeading)
+                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen || player.opened != nil)
                 .frame(width: cover, alignment: .leading)
 
             ZStack(alignment: .leading) {
@@ -68,6 +76,7 @@ struct PlayerView: View {
                     .animation(.spring(response: 0.5, dampingFraction: 0.85), value: searchOpen)
 
                 CoverArt(player: player, size: cover)
+                    .trackMenu(player.track?.uri, player: player)
                     .onTapGesture(count: 2) {
                         withAnimation(.spring(response: 0.7, dampingFraction: 0.72)) { vinyl.toggle() }
                     }
@@ -109,6 +118,12 @@ struct PlayerView: View {
             .frame(height: 50)
 
             ZStack(alignment: .topTrailing) {
+                if let opened = player.opened, !searchOpen {
+                    CollectionPanel(player: player, collection: opened)
+                        .padding(.top, 6)
+                        .id(opened.tile.id)
+                        .transition(.asymmetric(insertion: .offset(x: 40).combined(with: .opacity), removal: .opacity))
+                }
                 if searchOpen {
                     VStack(alignment: .leading, spacing: 6) {
                         SearchField(player: player, focused: $searchFocused) { closeSearch() }
@@ -120,7 +135,7 @@ struct PlayerView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
-            if !searchOpen {
+            if !searchOpen && player.opened == nil {
                 ShelfTabs(player: player)
                     .opacity(hoverTag == nil ? 1 : 0)
                     .animation(.easeOut(duration: 0.15), value: hoverTag == nil)
@@ -132,7 +147,7 @@ struct PlayerView: View {
 
     @ViewBuilder
     private var hoverLabel: some View {
-        if let hoverTag, !searchOpen {
+        if let hoverTag, !searchOpen, player.opened == nil {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(hoverTag.tile.title)
                     .font(.system(size: 15, weight: .bold))
@@ -152,6 +167,7 @@ struct PlayerView: View {
     }
 
     private func openSearch() {
+        player.closeCollection()
         withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) { searchOpen = true }
         player.searching = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { searchFocused = true }
