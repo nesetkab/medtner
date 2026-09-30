@@ -161,6 +161,9 @@ struct SeekRail: View {
                         .offset(y: y - 1.5)
                 }
 
+            }
+            .frame(width: geo.size.width)
+            .overlay(alignment: .topLeading) {
                 if hovering || dragFraction != nil {
                     let y = travel * CGFloat(min(max(shown, 0), 1))
                     Text(formatTime(Int(Double(player.durationMs) * shown)))
@@ -170,11 +173,11 @@ struct SeekRail: View {
                         .padding(.vertical, 3)
                         .background(Capsule().fill(player.accentColor))
                         .fixedSize()
-                        .offset(x: knob + 14, y: y - 2)
+                        .offset(x: geo.size.width / 2 + knob / 2 + 8, y: y - 2)
                         .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
+                        .allowsHitTesting(false)
                 }
             }
-            .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
             .pointerStyle(.link)
             .gesture(
