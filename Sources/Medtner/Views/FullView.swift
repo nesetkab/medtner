@@ -119,7 +119,7 @@ struct FullView: View {
 
     private var clock: some View {
         TimelineView(.everyMinute) { context in
-            Text(context.date, format: .dateTime.hour().minute())
+            Text(context.date.formatted(.dateTime.hour().minute()).lowercased())
                 .font(.system(size: 44, weight: .light).monospacedDigit())
                 .tracking(-1)
                 .foregroundStyle(.white.opacity(0.55))
