@@ -12,8 +12,9 @@ swiftc -O -wmo -target arm64-apple-macos15.0 -swift-version 5 \
   $(find Sources -name '*.swift') -o "$APP/Contents/MacOS/Medtner"
 strip -x "$APP/Contents/MacOS/Medtner"
 
-if [ ! -f build/AppIcon.icns ]; then
-  swift scripts/icon.swift build/AppIcon.iconset
+if [ ! -f build/AppIcon.icns ] || [ Resources/AppIcon.svg -nt build/AppIcon.icns ]; then
+  rm -rf build/AppIcon.iconset
+  swift scripts/icon.swift Resources/AppIcon.svg build/AppIcon.iconset
   iconutil -c icns build/AppIcon.iconset -o build/AppIcon.icns
 fi
 cp build/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
