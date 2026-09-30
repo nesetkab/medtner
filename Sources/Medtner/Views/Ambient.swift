@@ -4,8 +4,8 @@ import SwiftUI
 
 final class BlobView: NSView {
     private let container = CALayer()
-    private let blobs: [CAGradientLayer] = (0..<4).map { _ in CAGradientLayer() }
-    private var smoothed: [CGFloat] = [0, 0, 0, 0]
+    private let blobs: [CAGradientLayer] = (0..<5).map { _ in CAGradientLayer() }
+    private var smoothed: [CGFloat] = [0, 0, 0, 0, 0]
     private var playing = false
     private var reactive = false
     private var lastLevels = Date.distantPast
@@ -20,13 +20,14 @@ final class BlobView: NSView {
         CGPoint(x: 0.3, y: 0.26),
         CGPoint(x: 0.28, y: -0.3),
         CGPoint(x: -0.3, y: 0.3),
+        CGPoint(x: 0.02, y: 0.02),
     ]
 
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.addSublayer(container)
-        for blob in blobs {
+        for blob in blobs.reversed() {
             blob.type = .radial
             blob.startPoint = CGPoint(x: 0.5, y: 0.5)
             blob.endPoint = CGPoint(x: 1, y: 1)
@@ -47,7 +48,7 @@ final class BlobView: NSView {
             CATransaction.begin()
             CATransaction.setAnimationDuration(1.2)
             for (i, blob) in blobs.enumerated() {
-                let color = colors[i % max(colors.count, 1)]
+                let color = i == 4 ? (colors.first ?? .white) : colors[i % max(colors.count, 1)]
                 blob.colors = [0.85, 0.7, 0.45, 0.22, 0.07, 0].map { color.withAlphaComponent($0).cgColor }
             }
             CATransaction.commit()
@@ -68,7 +69,7 @@ final class BlobView: NSView {
         container.frame = bounds
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         for (i, blob) in blobs.enumerated() {
-            let size = diameter * (i == 0 ? 1.05 : 0.85)
+            let size = diameter * [1.05, 0.85, 0.85, 0.85, 0.95][i]
             blob.bounds = CGRect(x: 0, y: 0, width: size, height: size)
             blob.position = CGPoint(x: center.x + anchors[i].x * diameter * spread, y: center.y + anchors[i].y * diameter * spread)
         }
@@ -85,8 +86,9 @@ final class BlobView: NSView {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.09)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .linear))
+        let overall = levels.reduce(0, +) / Float(max(levels.count, 1))
         for (i, blob) in blobs.enumerated() {
-            let target = CGFloat(levels[i])
+            let target = CGFloat(i < levels.count ? levels[i] : overall)
             let rate: CGFloat = target > smoothed[i] ? 0.55 : 0.14
             smoothed[i] += (target - smoothed[i]) * rate
             let scale = 0.7 + smoothed[i] * 0.55
@@ -127,8 +129,8 @@ final class BlobView: NSView {
             blob.transform = CATransform3DMakeScale(0.85, 0.85, 1)
             let pulse = CABasicAnimation(keyPath: "transform.scale")
             pulse.fromValue = 0.72
-            pulse.toValue = [1.08, 0.95, 1.12, 0.9][i]
-            pulse.duration = [0.9, 1.3, 1.1, 1.6][i]
+            pulse.toValue = [1.08, 0.95, 1.12, 0.9, 1.0][i]
+            pulse.duration = [0.9, 1.3, 1.1, 1.6, 2.1][i]
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
             pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
