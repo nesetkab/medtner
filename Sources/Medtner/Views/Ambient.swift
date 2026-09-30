@@ -7,6 +7,7 @@ final class BlobView: NSView {
     private let blobs: [CAGradientLayer] = (0..<5).map { _ in CAGradientLayer() }
     private var smoothed: [CGFloat] = [0, 0, 0, 0, 0]
     private var playing = false
+    private var started = false
     private var reactive = false
     private var lastLevels = Date.distantPast
     private var colors: [NSColor] = []
@@ -57,9 +58,10 @@ final class BlobView: NSView {
             self.diameter = diameter
             needsLayout = true
         }
-        guard playing != self.playing else { return }
+        guard playing != self.playing || !started else { return }
+        started = true
         self.playing = playing
-        playing ? begin() : end()
+        playing ? begin() : rest()
     }
 
     override func layout() {
@@ -112,25 +114,25 @@ final class BlobView: NSView {
         container.add(drift, forKey: "drift")
 
         reactive = false
-        startIdlePulse()
+        startIdlePulse(calm: false)
         watchdog?.invalidate()
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self, self.reactive, Date().timeIntervalSince(self.lastLevels) > 0.6 else { return }
             self.reactive = false
-            self.startIdlePulse()
+            self.startIdlePulse(calm: false)
         }
         timer.tolerance = 0.2
         RunLoop.main.add(timer, forMode: .common)
         watchdog = timer
     }
 
-    private func startIdlePulse() {
+    private func startIdlePulse(calm: Bool) {
         for (i, blob) in blobs.enumerated() {
             blob.transform = CATransform3DMakeScale(0.85, 0.85, 1)
             let pulse = CABasicAnimation(keyPath: "transform.scale")
-            pulse.fromValue = 0.72
-            pulse.toValue = [1.08, 0.95, 1.12, 0.9, 1.0][i]
-            pulse.duration = [0.9, 1.3, 1.1, 1.6, 2.1][i]
+            pulse.fromValue = calm ? 0.82 : 0.72
+            pulse.toValue = calm ? [0.98, 0.92, 1.0, 0.9, 0.95][i] : [1.08, 0.95, 1.12, 0.9, 1.0][i]
+            pulse.duration = (calm ? 3.2 : 1) * [0.9, 1.3, 1.1, 1.6, 2.1][i]
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
             pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -139,23 +141,26 @@ final class BlobView: NSView {
         }
     }
 
-    private func end() {
+    private func rest() {
         watchdog?.invalidate()
         watchdog = nil
         reactive = false
-        CATransaction.begin()
-        CATransaction.setAnimationDuration(0.9)
-        CATransaction.setCompletionBlock { [weak self] in
-            guard let self, !self.playing else { return }
-            self.container.removeAnimation(forKey: "drift")
-            for blob in self.blobs { blob.removeAnimation(forKey: "idle") }
+        if container.animation(forKey: "drift") == nil {
+            let drift = CABasicAnimation(keyPath: "transform.rotation.z")
+            drift.fromValue = 0
+            drift.toValue = Double.pi * 2
+            drift.duration = 48
+            drift.repeatCount = .infinity
+            container.add(drift, forKey: "drift")
         }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(1.2)
         for (i, blob) in blobs.enumerated() {
-            blob.opacity = 0
-            blob.transform = CATransform3DMakeScale(0.6, 0.6, 1)
+            blob.opacity = min(1, 0.36 * glow)
             smoothed[i] = 0
         }
         CATransaction.commit()
+        startIdlePulse(calm: true)
     }
 }
 

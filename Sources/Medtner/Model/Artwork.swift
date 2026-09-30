@@ -58,6 +58,11 @@ enum Palette {
     static let tile = Color(white: 0.85)
     static let muted = Color(white: 0.55)
     static let defaultAccent = NSColor(red: 0.84, green: 0.72, blue: 1.0, alpha: 1)
+    static let resting: [NSColor] = [
+        NSColor(red: 0.16, green: 0.33, blue: 0.95, alpha: 1),
+        NSColor(red: 0.3, green: 0.45, blue: 1.0, alpha: 1),
+        NSColor(red: 0.42, green: 0.36, blue: 0.98, alpha: 1),
+    ]
     static let placeholder: NSImage? = Bundle.main.url(forResource: "Cover", withExtension: "svg").flatMap(NSImage.init(contentsOf:))
 
     static func accent(from image: NSImage) -> NSColor {

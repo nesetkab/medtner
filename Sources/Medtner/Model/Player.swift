@@ -43,7 +43,7 @@ final class Player {
 
     var artwork: NSImage?
     var accent = Palette.defaultAccent
-    var palette: [NSColor] = [Palette.defaultAccent]
+    var palette: [NSColor] = Palette.resting
 
     var shelfMode: ShelfMode = ShelfMode(rawValue: UserDefaults.standard.string(forKey: "shelf") ?? "") ?? .recent {
         didSet {
