@@ -8,7 +8,7 @@ struct HoverTag: Equatable {
 enum Layout {
     static let width: CGFloat = 880
     static let height: CGFloat = 570
-    static let cover: CGFloat = 282
+    static let cover: CGFloat = 296
     static let tile: CGFloat = 116
     static let margin: CGFloat = 30
 }
@@ -45,8 +45,9 @@ struct PlayerView: View {
                     .zIndex(1)
 
                 ShelfColumn(player: player, hoverTag: $hoverTag)
-                    .frame(width: Layout.tile)
-                    .padding(.trailing, Layout.margin)
+                    .frame(width: Layout.tile + 24)
+                    .padding(.leading, -12)
+                    .padding(.trailing, Layout.margin - 12)
                     .zIndex(3)
             }
         }
@@ -153,7 +154,7 @@ struct PlayerView: View {
             .lineLimit(1)
             .frame(maxWidth: 280, alignment: .trailing)
             .padding(.trailing, Layout.tile + Layout.margin + 22)
-            .offset(y: hoverTag.y - 20)
+            .offset(y: max(hoverTag.y - 20, 92))
             .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
             .id(hoverTag.tile.id)
             .allowsHitTesting(false)
@@ -182,22 +183,73 @@ struct TrackHeading: View {
         VStack(alignment: .leading, spacing: 0) {
             let title = player.track?.name ?? "Medtner"
             let artist = player.track?.artistLine ?? (player.phase == .ready ? "Press play" : "Not connected")
-            Text(title)
-                .font(.system(size: 54, weight: .bold))
-                .tracking(-2.2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.45)
-                .id("t-" + title)
-                .transition(TextReveal())
-            Text(artist)
-                .font(.system(size: 26, weight: .regular))
-                .tracking(-0.9)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-                .id("a-" + artist)
-                .transition(TextReveal())
-                .offset(y: -3)
+            Marquee(key: title) {
+                Text(title)
+                    .font(.system(size: 54, weight: .bold))
+                    .tracking(-2.2)
+                    .fixedSize()
+            }
+            .frame(height: 66)
+            .id("t-" + title)
+            .transition(TextReveal())
+            Marquee(key: artist) {
+                Text(artist)
+                    .font(.system(size: 26, weight: .regular))
+                    .tracking(-0.9)
+                    .fixedSize()
+            }
+            .frame(height: 32)
+            .id("a-" + artist)
+            .transition(TextReveal())
+            .offset(y: -3)
         }
+    }
+}
+
+struct Marquee<Content: View>: View {
+    let key: String
+    @ViewBuilder let content: Content
+    @State private var textWidth: CGFloat = 0
+    @State private var boxWidth: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    private var overflow: CGFloat { max(0, textWidth - boxWidth) }
+
+    var body: some View {
+        content
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { textWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in textWidth = width }
+            })
+            .offset(x: offset)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(GeometryReader { proxy in
+                Color.clear.onAppear { boxWidth = proxy.size.width }
+                    .onChange(of: proxy.size.width) { _, width in boxWidth = width }
+            })
+            .clipped()
+            .mask(
+                LinearGradient(stops: [
+                    .init(color: offset < 0 ? .clear : .black, location: 0),
+                    .init(color: .black, location: overflow > 0 ? 0.04 : 0),
+                    .init(color: .black, location: overflow > 0 ? 0.92 : 1),
+                    .init(color: overflow > 0 && offset > -overflow + 1 ? .clear : .black, location: 1),
+                ], startPoint: .leading, endPoint: .trailing)
+            )
+            .task(id: "\(key)-\(Int(overflow))") {
+                offset = 0
+                guard overflow > 0 else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(2.5))
+                    guard !Task.isCancelled else { return }
+                    let travel = overflow + 8
+                    let duration = Double(travel) / 38
+                    withAnimation(.linear(duration: duration)) { offset = -travel }
+                    try? await Task.sleep(for: .seconds(duration + 2))
+                    guard !Task.isCancelled else { return }
+                    withAnimation(.spring(response: 0.7, dampingFraction: 0.9)) { offset = 0 }
+                }
+            }
     }
 }
 

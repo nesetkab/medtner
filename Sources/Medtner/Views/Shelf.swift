@@ -44,6 +44,7 @@ struct ShelfColumn: View {
                 }
             }
             .padding(.vertical, Layout.margin)
+            .padding(.horizontal, 12)
             .animation(.spring(response: 0.5, dampingFraction: 0.8), value: player.shelf.map(\.id))
         }
         .scrollClipDisabled(false)
