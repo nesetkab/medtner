@@ -5,6 +5,10 @@ import SwiftUI
 final class RailLayerView: NSView {
     private let fill = CALayer()
     private let knob = CALayer()
+    private let bubble = CALayer()
+    private let label = CATextLayer()
+    private var bubbleTimer: Timer?
+    private var showingTime = false
     private var fraction: Double = 0
     private var playing = false
     private var remaining: Double = 0
@@ -26,6 +30,57 @@ final class RailLayerView: NSView {
         knob.shadowOffset = .zero
         layer?.addSublayer(fill)
         layer?.addSublayer(knob)
+        label.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        label.fontSize = 11
+        label.foregroundColor = NSColor.black.cgColor
+        label.alignmentMode = .center
+        bubble.addSublayer(label)
+        bubble.opacity = 0
+        bubble.anchorPoint = CGPoint(x: 0, y: 0.5)
+        bubble.transform = CATransform3DMakeScale(0.6, 0.6, 1)
+        knob.addSublayer(bubble)
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        let scale = window?.backingScaleFactor ?? 2
+        label.contentsScale = scale
+    }
+
+    func showTime(_ visible: Bool) {
+        guard visible != showingTime else { return }
+        showingTime = visible
+        bubbleTimer?.invalidate()
+        bubbleTimer = nil
+        if visible {
+            refreshBubble()
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.refreshBubble() }
+            timer.tolerance = 0.1
+            RunLoop.main.add(timer, forMode: .common)
+            bubbleTimer = timer
+        }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.18)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1.2))
+        bubble.opacity = visible ? 1 : 0
+        bubble.transform = visible ? CATransform3DIdentity : CATransform3DMakeScale(0.6, 0.6, 1)
+        CATransaction.commit()
+    }
+
+    private func refreshBubble() {
+        let seconds = Int(currentFraction() * duration)
+        let text = String(format: "%d:%02d", seconds / 60, seconds % 60)
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        let width = ceil((text as NSString).size(withAttributes: [.font: font]).width) + 12
+        let height: CGFloat = 19
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        label.string = text
+        label.frame = CGRect(x: 0, y: 3, width: width, height: 14)
+        bubble.bounds = CGRect(x: 0, y: 0, width: width, height: height)
+        bubble.cornerRadius = height / 2
+        bubble.position = CGPoint(x: knobSize + 8, y: knobSize / 2)
+        CATransaction.commit()
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -38,6 +93,7 @@ final class RailLayerView: NSView {
         fill.backgroundColor = color.withAlphaComponent(0.35).cgColor
         knob.backgroundColor = color.cgColor
         knob.shadowColor = color.cgColor
+        bubble.backgroundColor = color.cgColor
         knob.opacity = hidden ? 0 : 1
         fill.opacity = hidden ? 0 : 1
         CATransaction.commit()
@@ -116,12 +172,14 @@ struct RailLayer: NSViewRepresentable {
     let hidden: Bool
     let knobSize: CGFloat
     let lineWidth: CGFloat
+    let showTime: Bool
 
     func makeNSView(context: Context) -> RailLayerView { RailLayerView(frame: .zero) }
 
     func updateNSView(_ view: RailLayerView, context: Context) {
         view.apply(fraction: fraction, playing: playing, durationMs: durationMs, color: color,
                    hidden: hidden, knobSize: knobSize, lineWidth: lineWidth)
+        view.showTime(showTime)
     }
 }
 
@@ -136,7 +194,6 @@ struct SeekRail: View {
             let travel = geo.size.height - knob
             let _ = player.progressEpoch
             let live = player.fraction()
-            let shown = dragFraction ?? live
 
             ZStack(alignment: .top) {
                 Capsule()
@@ -146,7 +203,8 @@ struct SeekRail: View {
 
                 RailLayer(fraction: live, playing: player.isPlaying, durationMs: player.durationMs,
                           color: player.accent, hidden: dragFraction != nil,
-                          knobSize: knob, lineWidth: hovering ? 4 : 3)
+                          knobSize: knob, lineWidth: hovering ? 4 : 3,
+                          showTime: hovering && dragFraction == nil)
 
                 if let dragFraction {
                     let y = travel * CGFloat(min(max(dragFraction, 0), 1))
@@ -164,9 +222,9 @@ struct SeekRail: View {
             }
             .frame(width: geo.size.width)
             .overlay(alignment: .topLeading) {
-                if hovering || dragFraction != nil {
-                    let y = travel * CGFloat(min(max(shown, 0), 1))
-                    Text(formatTime(Int(Double(player.durationMs) * shown)))
+                if let dragFraction {
+                    let y = travel * CGFloat(min(max(dragFraction, 0), 1))
+                    Text(formatTime(Int(Double(player.durationMs) * dragFraction)))
                         .font(.system(size: 11, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.black)
                         .padding(.horizontal, 6)
