@@ -255,7 +255,7 @@ final class Player {
         }
         let changed = state.item?.uri != track?.uri
         if changed {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) { track = state.item }
+            withAnimation(.easeOut(duration: 0.8)) { track = state.item }
             loadArtwork()
             liked = false
             if let uri = state.item?.uri {

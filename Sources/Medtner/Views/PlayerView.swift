@@ -232,7 +232,6 @@ struct Marquee<Content: View>: View {
                     .onChange(of: proxy.size.width) { _, width in boxWidth = width }
             })
             .clipped()
-            .animation(.snappy(duration: 0.18), value: overflow > 0)
             .mask(
                 LinearGradient(stops: [
                     .init(color: offset < 0 ? .clear : .black, location: 0),
@@ -242,7 +241,9 @@ struct Marquee<Content: View>: View {
                 ], startPoint: .leading, endPoint: .trailing)
             )
             .task(id: "\(key)-\(Int(overflow))") {
-                offset = 0
+                var reset = Transaction()
+                reset.disablesAnimations = true
+                withTransaction(reset) { offset = 0 }
                 guard overflow > 0 else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(2.5))
