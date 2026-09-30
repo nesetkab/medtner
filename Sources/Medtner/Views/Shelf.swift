@@ -152,7 +152,7 @@ struct ShelfTabs: View {
                         .frame(width: 7, height: 7)
                     }
                 }
-                .buttonStyle(PressStyle(scale: 0.94))
+                .buttonStyle(PressStyle(scale: 0.94, hover: 1.08))
             }
         }
     }
@@ -258,6 +258,8 @@ struct SearchRow: View {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(hovering ? Color(white: 0.16) : .clear)
         )
+        .scaleEffect(hovering ? 1.025 : 1, anchor: .leading)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hovering)
         .contentShape(Rectangle())
         .pointerStyle(.link)
         .onTapGesture(perform: play)

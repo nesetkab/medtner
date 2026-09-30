@@ -263,6 +263,15 @@ final class TransportRow: MenuRow {
         for control in Control.allCases {
             let r = rect(for: control)
             hoverFill(r, lit: hover == control)
+            NSGraphicsContext.saveGraphicsState()
+            if hover == control {
+                let grow = NSAffineTransform()
+                grow.translateX(by: r.midX, yBy: r.midY)
+                grow.scale(by: 1.15)
+                grow.translateX(by: -r.midX, yBy: -r.midY)
+                grow.concat()
+            }
+            defer { NSGraphicsContext.restoreGraphicsState() }
             let color = NSColor.labelColor
             switch control {
             case .shuffle:

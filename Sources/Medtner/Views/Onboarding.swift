@@ -108,7 +108,7 @@ struct Onboarding: View {
                     .padding(.vertical, 6)
                     .background(Capsule().fill(Color(white: 0.17)))
                 }
-                .buttonStyle(PressStyle(scale: 0.94))
+                .buttonStyle(PressStyle(scale: 0.94, hover: 1.05))
             }
             HStack(spacing: 10) {
                 Text("3").font(.system(size: 13, weight: .black)).foregroundStyle(Palette.muted).frame(width: 14)
@@ -142,7 +142,7 @@ struct Onboarding: View {
                     UserDefaults.standard.removeObject(forKey: "clientID")
                     Task { await player.resolvePhase() }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(scale: 0.94, hover: 1.06))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(Palette.muted)
             }
@@ -195,7 +195,7 @@ struct Onboarding: View {
                 .padding(.vertical, 10)
                 .background(Capsule().fill(enabled ? Color(nsColor: Palette.defaultAccent) : Color(white: 0.3)))
         }
-        .buttonStyle(PressStyle(scale: 0.93))
+        .buttonStyle(PressStyle(scale: 0.93, hover: 1.05))
         .disabled(!enabled)
     }
 

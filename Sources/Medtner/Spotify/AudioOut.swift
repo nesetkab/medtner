@@ -5,7 +5,7 @@ final class AudioOut: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let node = AVAudioPlayerNode()
     private let format = AVAudioFormat(standardFormatWithSampleRate: 44_100, channels: 2)!
-    private let slots = DispatchSemaphore(value: 8)
+    private let slots = DispatchSemaphore(value: 13)
     private let lock = NSLock()
     private let framesPerChunk = 2_048
     private var held = false

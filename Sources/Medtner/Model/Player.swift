@@ -56,6 +56,7 @@ final class Player {
     var playlists: [Tile] = []
 
     var liked = false
+    var progressEpoch = 0
     var opened: OpenCollection?
     var editable: [Tile] = []
     var toast: String?
@@ -269,6 +270,7 @@ final class Player {
         durationMs = max(state.item?.duration_ms ?? 1, 1)
         progressMs = state.progress_ms ?? 0
         progressStamp = Date()
+        progressEpoch &+= 1
         device = state.device
         shuffle = state.shuffle_state ?? false
         contextURI = state.context?.uri
@@ -337,6 +339,7 @@ final class Player {
         let wasPlaying = isPlaying
         progressMs = position()
         progressStamp = Date()
+        progressEpoch &+= 1
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying.toggle() }
         if onEngine {
             if wasPlaying { engine.audio.hold() } else { engine.audio.release() }
@@ -384,6 +387,7 @@ final class Player {
         let ms = Int(Double(durationMs) * min(max(fraction, 0), 1))
         progressMs = ms
         progressStamp = Date()
+        progressEpoch &+= 1
         hold()
         perform { [api] _ in try await api.seek(ms) }
     }

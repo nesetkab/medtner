@@ -68,7 +68,7 @@ struct PlayerView: View {
     private var leftColumn: some View {
         VStack(alignment: .leading, spacing: 0) {
             TrackHeading(player: player)
-                .frame(width: searchOpen || player.opened != nil ? cover + 20 : 480, height: 104, alignment: .topLeading)
+                .frame(width: searchOpen || player.opened != nil ? cover : 480, height: 104, alignment: .topLeading)
                 .zIndex(1)
                 .animation(.spring(response: 0.45, dampingFraction: 0.85), value: searchOpen || player.opened != nil)
                 .frame(width: cover, alignment: .leading)
@@ -222,7 +222,7 @@ struct Marquee<Content: View>: View {
                     .onChange(of: proxy.size.width) { _, width in textWidth = width }
             })
             .offset(x: offset)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             .background(GeometryReader { proxy in
                 Color.clear.onAppear { boxWidth = proxy.size.width }
                     .onChange(of: proxy.size.width) { _, width in boxWidth = width }

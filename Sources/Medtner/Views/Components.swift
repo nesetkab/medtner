@@ -2,13 +2,28 @@ import SwiftUI
 
 struct PressStyle: ButtonStyle {
     var scale: CGFloat = 0.82
+    var hover: CGFloat = 1.14
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        PressBody(label: configuration.label, pressed: configuration.isPressed, scale: scale, hover: hover)
+    }
+}
+
+private struct PressBody<Label: View>: View {
+    let label: Label
+    let pressed: Bool
+    let scale: CGFloat
+    let hover: CGFloat
+    @State private var hovering = false
+
+    var body: some View {
+        label
             .contentShape(Rectangle().inset(by: -8))
             .pointerStyle(.link)
-            .scaleEffect(configuration.isPressed ? scale : 1)
-            .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
+            .scaleEffect(pressed ? scale : hovering ? hover : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.55), value: pressed)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hovering)
+            .onHover { hovering = $0 }
     }
 }
 
@@ -265,6 +280,8 @@ struct PickerRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? Color(white: 0.17) : .clear))
+        .scaleEffect(hovering ? 1.03 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hovering)
         .contentShape(Rectangle())
         .pointerStyle(.link)
         .onHover { hovering = $0 }
