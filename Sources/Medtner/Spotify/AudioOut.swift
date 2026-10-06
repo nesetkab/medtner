@@ -78,7 +78,7 @@ final class AudioOut: @unchecked Sendable {
     func interrupt() {
         lock.lock()
         gated = true
-        gateDeadline = Date().addingTimeInterval(3)
+        gateDeadline = Date().addingTimeInterval(0.12)
         lock.unlock()
         fade(to: 0, over: 0.04) { [weak self] in
             guard let self else { return }

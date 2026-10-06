@@ -138,7 +138,7 @@ final class Engine {
         case "reconnecting", "sink_started", "sink_stopped":
             break
         default:
-            onEvent?("\(name)|\(name == "volume_changed" ? String(value) : "")")
+            onEvent?("\(name)|\(value)")
         }
     }
 

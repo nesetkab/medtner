@@ -255,6 +255,14 @@ final class Player {
             UserDefaults.standard.set(volume, forKey: "engineVolume")
             return
         }
+        if ["playing", "paused", "seeked"].contains(event), engine.useBuiltin,
+           let ms = Int(parts.count > 1 ? parts[1] : "") {
+            progressMs = ms
+            progressStamp = Date()
+            progressEpoch &+= 1
+            if event != "seeked" { isPlaying = event == "playing" }
+            syncLyrics()
+        }
         switch event {
         case "playing":
             engine.audio.openGate()
