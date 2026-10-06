@@ -93,27 +93,28 @@ struct LyricsStrip: View {
 
     var body: some View {
         let index = player.lyricIndex ?? -1
-        VStack(alignment: .leading, spacing: size * 0.35) {
-            line(at: index - 1, opacity: 0.3, scale: 0.62)
-            line(at: index, opacity: 1, scale: 1)
-            line(at: index + 1, opacity: 0.38, scale: 0.62)
+        let lower = max(0, index - 1)
+        let upper = min(lyrics.lines.count - 1, max(index, 0) + 2)
+        VStack(alignment: .leading, spacing: size * 0.38) {
+            if lower <= upper {
+                ForEach(lyrics.lines[lower...upper]) { line in
+                    let current = line.id == index
+                    Text(line.text.isEmpty ? "· · ·" : line.text)
+                        .font(.system(size: size, weight: .bold))
+                        .tracking(-size * 0.03)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(.white.opacity(current ? 1 : line.id < index ? 0.22 : 0.34))
+                        .scaleEffect(current ? 1 : 0.9, anchor: .leading)
+                        .blur(radius: current ? 0 : 1.5)
+                        .transition(.asymmetric(
+                            insertion: .offset(y: size * 1.2).combined(with: .opacity),
+                            removal: .offset(y: -size * 1.2).combined(with: .opacity)
+                        ))
+                }
+            }
         }
-        .animation(.spring(response: 0.6, dampingFraction: 0.85), value: index)
-    }
-
-    @ViewBuilder
-    private func line(at index: Int, opacity: Double, scale: CGFloat) -> some View {
-        let text = lyrics.lines.indices.contains(index) ? lyrics.lines[index].text : ""
-        Text(text.isEmpty ? " " : text)
-            .font(.system(size: size * scale, weight: .bold))
-            .tracking(-size * scale * 0.03)
-            .lineLimit(2)
-            .foregroundStyle(.white.opacity(opacity))
-            .id("\(index)-\(opacity)")
-            .transition(.asymmetric(
-                insertion: .offset(y: size * 0.6).combined(with: .opacity),
-                removal: .offset(y: -size * 0.6).combined(with: .opacity)
-            ))
+        .frame(minHeight: size * 6.2, alignment: .bottom)
+        .animation(.spring(response: 0.75, dampingFraction: 0.9), value: index)
     }
 }
 
