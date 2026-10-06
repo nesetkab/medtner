@@ -140,7 +140,8 @@ struct PlayerView: View {
                 .disabled(!searchOpen)
                 .accessibilityHidden(!searchOpen)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topTrailing)
+            .clipped()
 
             if !searchOpen && player.opened == nil {
                 ShelfTabs(player: player)

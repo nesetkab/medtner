@@ -12,6 +12,7 @@ struct LyricsPanel: View {
                 plain
             }
         }
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .mask(
             LinearGradient(stops: [
                 .init(color: .clear, location: 0),
@@ -40,7 +41,8 @@ struct LyricsPanel: View {
             }
         }
         .padding(.top, index < 2 ? CGFloat(2 - max(index, 0)) * 44 + 24 : 24)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
+        .clipped()
         .animation(.spring(response: 0.75, dampingFraction: 0.9), value: index)
     }
 
