@@ -144,3 +144,33 @@ struct Toast: View {
         .overlay(Capsule().strokeBorder(Color(white: 0.24), lineWidth: 1))
     }
 }
+
+struct UpdatePill: View {
+    let version: String
+    let installing: Bool
+    let accent: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(accent)
+                    .frame(width: 7, height: 7)
+                Text(installing ? "Updating to \(version)…" : "Medtner \(version) is ready")
+                    .font(.system(size: 12, weight: .semibold))
+                if !installing {
+                    Text("Update")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(accent)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(Color(white: 0.17)))
+            .overlay(Capsule().strokeBorder(Color(white: 0.24), lineWidth: 1))
+        }
+        .buttonStyle(PressStyle(scale: 0.95, hover: 1.04))
+        .disabled(installing)
+    }
+}

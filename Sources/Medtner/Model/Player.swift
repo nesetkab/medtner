@@ -673,7 +673,7 @@ final class Player {
     func syncLyrics() {
         lyricsClock?.cancel()
         guard let lyrics, lyrics.synced, lyrics.trackURI == track?.uri else { return }
-        let now = position() + 100
+        let now = position() + 100 + UserDefaults.standard.integer(forKey: "lyricsOffset")
         let index = lyrics.index(at: now)
         if index != lyricIndex { lyricIndex = index }
         guard isPlaying else { return }

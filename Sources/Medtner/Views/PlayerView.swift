@@ -55,6 +55,13 @@ struct PlayerView: View {
         .coordinateSpace(name: "root")
         .overlay(alignment: .topTrailing) { hoverLabel }
         .overlay(alignment: .bottom) {
+            if let release = Updater.shared.available, player.toast == nil {
+                UpdatePill(version: release.version, installing: Updater.shared.installing, accent: player.accentColor) {
+                    Updater.shared.install()
+                }
+                .padding(.bottom, 22)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
             if let toast = player.toast {
                 Toast(text: toast, accent: player.accentColor)
                     .padding(.bottom, 22)

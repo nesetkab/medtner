@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var status: StatusItemController!
     private var nowPlaying: NowPlaying?
+    private var settingsWindow: NSWindow?
     private var keyMonitor: Any?
     private var windowVisible = false { didSet { updateSurfaces() } }
 
@@ -50,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         installKeys()
         nowPlaying = NowPlaying(player: player)
         player.boot()
+        Updater.shared.start()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -126,6 +128,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc func openWindowAction() { showWindow() }
+    @objc func installUpdate() { Updater.shared.install() }
+
+    @objc func checkForUpdates() {
+        openSettings()
+        Task { await Updater.shared.check() }
+    }
+
+    @objc func openSettings() {
+        if settingsWindow == nil {
+            let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+            window.titlebarAppearsTransparent = true
+            window.title = "Settings"
+            window.appearance = NSAppearance(named: .darkAqua)
+            window.backgroundColor = NSColor(red: 0.067, green: 0.067, blue: 0.067, alpha: 1)
+            window.isReleasedWhenClosed = false
+            window.contentView = FirstClickHostingView(rootView: SettingsView(player: player, updater: Updater.shared)
+                .padding(.top, 10)
+                .preferredColorScheme(.dark))
+            window.center()
+            settingsWindow = window
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        settingsWindow?.makeKeyAndOrderFront(nil)
+    }
     @objc func playPause() { player.togglePlay() }
     @objc func nextTrack() { player.next() }
     @objc func previousTrack() { player.previous() }
@@ -162,6 +188,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         items.append(.separator())
 
         add("Open Medtner", #selector(openWindowAction), key: "0")
+        add("Settings…", #selector(openSettings), key: ",")
+        if let release = Updater.shared.available {
+            add("Update to \(release.version)", #selector(installUpdate))
+        }
         items.append(.separator())
         add("Sign Out", #selector(signOut))
         let quit = NSMenuItem(title: "Quit Medtner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -175,6 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "About Medtner", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",").target = self
+        appMenu.addItem(withTitle: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Medtner", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(withTitle: "Quit Medtner", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

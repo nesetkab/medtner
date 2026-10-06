@@ -52,7 +52,7 @@ final class Engine {
         var args = [
             "--name", Self.deviceName,
             "--device-type", "computer",
-            "--bitrate", "320",
+            "--bitrate", String(UserDefaults.standard.object(forKey: "bitrate") as? Int ?? 320),
             "--system-cache", cache.path,
             "--cache", audioCache.path,
             "--cache-size-limit", "512M",
@@ -61,10 +61,12 @@ final class Engine {
             "--volume-ctrl", "fixed",
             "--backend", "pipe",
             "--format", "S16",
-            "--enable-volume-normalisation",
             "--autoplay", "on",
             "--quiet",
         ]
+        if UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true {
+            args.append("--enable-volume-normalisation")
+        }
         if let hook = Bundle.main.url(forAuxiliaryExecutable: "medtner-hook") ?? Bundle.main.executableURL {
             args += ["--onevent", hook.path]
         }
@@ -117,6 +119,12 @@ final class Engine {
         } catch {
             state = .missing
         }
+    }
+
+    func restart() {
+        stop()
+        restarts = 0
+        start()
     }
 
     func stop() {
