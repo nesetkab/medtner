@@ -108,6 +108,7 @@ final class Player {
     @ObservationIgnored private var queuedTracks: [Track] = []
     @ObservationIgnored private var trustEngineUntil = Date.distantPast
     @ObservationIgnored private var waking = false
+    @ObservationIgnored private var engineClockAt = Date.distantPast
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
@@ -257,6 +258,7 @@ final class Player {
         }
         if ["playing", "paused", "seeked"].contains(event), engine.useBuiltin,
            let ms = Int(parts.count > 1 ? parts[1] : "") {
+            engineClockAt = Date()
             progressMs = ms
             progressStamp = Date()
             progressEpoch &+= 1
@@ -314,10 +316,14 @@ final class Player {
         }
         isPlaying = state.is_playing
         durationMs = max(state.item?.duration_ms ?? 1, 1)
-        progressMs = state.progress_ms ?? 0
-        progressStamp = Date()
-        progressEpoch &+= 1
-        syncLyrics()
+        let reported = state.progress_ms ?? 0
+        let engineFresh = onEngine && engine.useBuiltin && Date().timeIntervalSince(engineClockAt) < 600
+        if !engineFresh || abs(reported - position()) > 2_000 {
+            progressMs = reported
+            progressStamp = Date()
+            progressEpoch &+= 1
+            syncLyrics()
+        }
         device = state.device
         shuffle = state.shuffle_state ?? false
         repeatMode = RepeatMode(rawValue: state.repeat_state ?? "off") ?? .off
