@@ -106,6 +106,7 @@ struct FullView: View {
     @State private var searchOpen = false
     @State private var hoverTag: HoverTag?
     @State private var scrub: Double?
+    @AppStorage("lyrics") private var showLyrics = true
     @FocusState private var searchFocused: Bool
 
     private var pinned: Bool { searchOpen || player.opened != nil || scrub != nil }
@@ -133,8 +134,16 @@ struct FullView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     .padding(margin)
 
-                placard(side: side)
-                    .padding(margin)
+                VStack(alignment: .leading, spacing: side * 0.05) {
+                    if showLyrics, let lyrics = player.lyrics, lyrics.synced {
+                        LyricsStrip(player: player, lyrics: lyrics, size: side * 0.05)
+                            .frame(maxWidth: geo.size.width * 0.55, alignment: .leading)
+                            .id(lyrics.trackURI)
+                            .transition(.opacity)
+                    }
+                    placard(side: side)
+                }
+                .padding(margin)
 
                 upNext
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)

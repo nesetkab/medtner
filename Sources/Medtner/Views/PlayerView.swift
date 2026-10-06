@@ -16,6 +16,7 @@ enum Layout {
 struct PlayerView: View {
     @Bindable var player: Player
     @State private var searchOpen = false
+    @AppStorage("lyrics") private var showLyrics = true
     @State private var hoverTag: HoverTag?
     @FocusState private var searchFocused: Bool
 
@@ -97,8 +98,9 @@ struct PlayerView: View {
 
     private var center: some View {
         VStack(alignment: .trailing, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(spacing: 4) {
                 Spacer(minLength: 0)
+                LyricsToggle(on: $showLyrics, available: player.lyrics != nil, accent: player.accentColor)
                 Button {
                     searchOpen ? closeSearch() : openSearch()
                 } label: {
@@ -113,6 +115,14 @@ struct PlayerView: View {
             .frame(height: 50)
 
             ZStack(alignment: .topTrailing) {
+                if showLyrics, let lyrics = player.lyrics, player.opened == nil, !searchOpen {
+                    LyricsPanel(player: player, lyrics: lyrics)
+                        .padding(.top, 48)
+                        .opacity(hoverTag == nil ? 1 : 0.15)
+                        .animation(.easeOut(duration: 0.15), value: hoverTag == nil)
+                        .id(lyrics.trackURI)
+                        .transition(.opacity)
+                }
                 if let opened = player.opened, !searchOpen {
                     CollectionPanel(player: player, collection: opened)
                         .padding(.top, 6)

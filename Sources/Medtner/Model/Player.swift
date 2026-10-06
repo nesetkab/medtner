@@ -56,6 +56,8 @@ final class Player {
     var playlists: [Tile] = []
 
     var liked = false
+    var lyrics: Lyrics?
+    var lyricIndex: Int?
     var fullScreen = false
     var upNext: [Tile] = []
     var progressEpoch = 0
@@ -85,6 +87,8 @@ final class Player {
     @ObservationIgnored private var volumeQuietUntil = Date.distantPast
     @ObservationIgnored private var artURL: URL?
     @ObservationIgnored private var queuedTracks: [Track] = []
+    @ObservationIgnored private var lyricsTask: Task<Void, Never>?
+    @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
 
     var shelf: [Tile] {
@@ -260,6 +264,7 @@ final class Player {
         if changed {
             withAnimation(.easeOut(duration: 0.8)) { track = state.item }
             loadArtwork()
+            loadLyrics()
             liked = false
             if let uri = state.item?.uri {
                 Task {
@@ -275,6 +280,7 @@ final class Player {
         progressMs = state.progress_ms ?? 0
         progressStamp = Date()
         progressEpoch &+= 1
+        syncLyrics()
         device = state.device
         shuffle = state.shuffle_state ?? false
         contextURI = state.context?.uri
@@ -345,6 +351,7 @@ final class Player {
         progressStamp = Date()
         progressEpoch &+= 1
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying.toggle() }
+        syncLyrics()
         if onEngine {
             if wasPlaying { engine.audio.hold() } else { engine.audio.release() }
         }
@@ -387,6 +394,7 @@ final class Player {
             progressStamp = Date()
             progressEpoch &+= 1
             loadArtwork()
+            loadLyrics()
         }
         perform { [api] _ in try await api.next() }
     }
@@ -401,6 +409,7 @@ final class Player {
         progressMs = ms
         progressStamp = Date()
         progressEpoch &+= 1
+        syncLyrics()
         hold()
         perform { [api] _ in try await api.seek(ms) }
     }
@@ -565,6 +574,45 @@ final class Player {
             try? await Task.sleep(for: .seconds(1.8))
             if toast == message { withAnimation(.easeOut(duration: 0.25)) { toast = nil } }
         }
+    }
+
+    private func loadLyrics() {
+        lyricsTask?.cancel()
+        guard let track else {
+            lyrics = nil
+            lyricIndex = nil
+            return
+        }
+        guard lyrics?.trackURI != track.uri else { return }
+        lyrics = nil
+        lyricIndex = nil
+        lyricsTask = Task {
+            let found = await LyricsSource.fetch(for: track)
+            guard !Task.isCancelled, self.track?.uri == track.uri else { return }
+            withAnimation(.easeOut(duration: 0.4)) { lyrics = found }
+            syncLyrics()
+        }
+    }
+
+    func syncLyrics() {
+        lyricsClock?.cancel()
+        guard let lyrics, lyrics.synced, lyrics.trackURI == track?.uri else { return }
+        let now = position() + 120
+        let index = lyrics.index(at: now)
+        if index != lyricIndex { lyricIndex = index }
+        guard isPlaying else { return }
+        let next = (index ?? -1) + 1
+        guard next < lyrics.lines.count else { return }
+        let wait = max(lyrics.lines[next].time - now, 30)
+        lyricsClock = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(wait))
+            guard !Task.isCancelled else { return }
+            self?.syncLyrics()
+        }
+    }
+
+    func seek(toMs ms: Int) {
+        seek(to: Double(ms) / Double(max(durationMs, 1)))
     }
 
     func loadUpNext() async {
