@@ -7,6 +7,7 @@ typedef void (*MedtnerEventCallback)(void *context, const char *event, int64_t v
 
 typedef struct {
     const char *name;
+    const char *log_path;
     const char *system_cache;
     const char *audio_cache;
     uint64_t audio_cache_limit;
@@ -21,3 +22,4 @@ typedef struct {
 
 bool medtner_engine_start(const MedtnerEngineConfig *config);
 void medtner_engine_stop(void);
+bool medtner_engine_radio(const char *track_uri);

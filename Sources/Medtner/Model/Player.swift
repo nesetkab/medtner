@@ -572,6 +572,17 @@ final class Player {
         if onEngine {
             engine.audio.interrupt()
             engine.audio.release()
+            if engine.radio(uri) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
+                hold(2)
+                flash("Playing radio")
+                Task {
+                    try? await Task.sleep(for: .seconds(2.2))
+                    holdUntil = .distantPast
+                    await refresh()
+                }
+                return
+            }
         }
         hold(0.3)
         perform { [api] device in try await api.play(device: device, uris: [uri]) }

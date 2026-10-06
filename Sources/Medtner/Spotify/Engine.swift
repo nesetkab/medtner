@@ -70,11 +70,15 @@ final class Engine {
         }
         self.bridge = bridge
         let context = Unmanaged.passUnretained(bridge).toOpaque()
+        let logPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Logs/Medtner/engine.log").path
         let started = Self.deviceName.withCString { name in
+            logPath.withCString { log in
             cache.path.withCString { system in
                 audioCache.path.withCString { audioPath in
                     var config = MedtnerEngineConfig(
                         name: name,
+                        log_path: log,
                         system_cache: system,
                         audio_cache: audioPath,
                         audio_cache_limit: 512 * 1024 * 1024,
@@ -96,6 +100,7 @@ final class Engine {
                     )
                     return medtner_engine_start(&config)
                 }
+            }
             }
         }
         guard started else {
@@ -226,6 +231,11 @@ final class Engine {
         } catch {
             state = .missing
         }
+    }
+
+    func radio(_ trackURI: String) -> Bool {
+        guard builtin else { return false }
+        return trackURI.withCString { medtner_engine_radio($0) }
     }
 
     func restart() {

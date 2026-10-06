@@ -15,7 +15,7 @@ librespot-oauth = { version = "0.8", default-features = false }
 librespot-metadata = { version = "0.8", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 futures-util = "0.3"
-log = "0.4"
+log = { version = "0.4", features = ["std"] }
 sha1 = "0.10"
 
 [profile.release]

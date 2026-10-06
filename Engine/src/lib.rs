@@ -2,7 +2,7 @@ use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use librespot_connect::{ConnectConfig, Spirc};
+use librespot_connect::{ConnectConfig, LoadContextOptions, LoadRequest, LoadRequestOptions, Spirc};
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::{DeviceType, SessionConfig};
@@ -17,7 +17,7 @@ use librespot_playback::mixer::{Mixer, MixerConfig, NoOpVolume};
 use librespot_metadata::audio::{AudioItem, UniqueFields};
 use librespot_playback::player::{Player, PlayerEvent};
 use sha1::{Digest, Sha1};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 pub type AudioCallback = extern "C" fn(context: *mut c_void, samples: *const f32, count: usize);
 pub type EventCallback = extern "C" fn(context: *mut c_void, event: *const c_char, value: i64);
@@ -25,6 +25,7 @@ pub type EventCallback = extern "C" fn(context: *mut c_void, event: *const c_cha
 #[repr(C)]
 pub struct MedtnerEngineConfig {
     pub name: *const c_char,
+    pub log_path: *const c_char,
     pub system_cache: *const c_char,
     pub audio_cache: *const c_char,
     pub audio_cache_limit: u64,
@@ -81,6 +82,43 @@ impl Sink for BridgeSink {
     }
 }
 
+struct FileLog {
+    file: Mutex<std::fs::File>,
+}
+
+impl log::Log for FileLog {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level() <= log::Level::Info && metadata.target().starts_with("librespot")
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+        let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if let Ok(mut file) = self.file.lock() {
+            use std::io::Write;
+            let _ = writeln!(file, "{stamp:.3} {} {}: {}", record.level(), record.target(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+fn start_log(path: &str) {
+    if path.is_empty() {
+        return;
+    }
+    if let Some(parent) = std::path::Path::new(path).parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(file) = std::fs::File::create(path) {
+        if log::set_boxed_logger(Box::new(FileLog { file: Mutex::new(file) })).is_ok() {
+            log::set_max_level(log::LevelFilter::Info);
+        }
+    }
+}
+
 struct Settings {
     name: String,
     system_cache: String,
@@ -93,6 +131,21 @@ struct Settings {
 }
 
 static RUNNING: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
+static COMMANDS: Mutex<Option<mpsc::UnboundedSender<Command>>> = Mutex::new(None);
+
+enum Command {
+    Radio(String),
+}
+
+#[no_mangle]
+pub extern "C" fn medtner_engine_radio(track_uri: *const c_char) -> bool {
+    let uri = string(track_uri);
+    if uri.is_empty() {
+        return false;
+    }
+    let sender = COMMANDS.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    sender.map(|s| s.send(Command::Radio(uri)).is_ok()).unwrap_or(false)
+}
 
 const SCOPES: &[&str] = &[
     "streaming",
@@ -156,6 +209,7 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
         return false;
     }
     let config = unsafe { &*config };
+    start_log(&string(config.log_path));
     let bridge = Bridge { audio: config.audio, event: config.event, context: config.context };
     let settings = Settings {
         name: string(config.name),
@@ -300,6 +354,9 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
         ..ConnectConfig::default()
     };
 
+    let (command_tx, mut commands) = mpsc::unbounded_channel();
+    *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = Some(command_tx);
+
     let mut failures = 0u32;
     loop {
         if session.is_invalid() {
@@ -325,18 +382,35 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
         failures = 0;
         bridge.emit("running", 0);
         tokio::pin!(task);
-        tokio::select! {
-            _ = &mut task => {
-                bridge.emit("reconnecting", 0);
-                if !session.is_invalid() {
-                    session.shutdown();
+        loop {
+            tokio::select! {
+                _ = &mut task => {
+                    bridge.emit("reconnecting", 0);
+                    if !session.is_invalid() {
+                        session.shutdown();
+                    }
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    break;
                 }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-            _ = &mut stop => {
-                let _ = spirc.shutdown();
-                let _ = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
-                return;
+                command = commands.recv() => {
+                    if let Some(Command::Radio(uri)) = command {
+                        let options = LoadRequestOptions {
+                            start_playing: true,
+                            seek_to: 0,
+                            context_options: Some(LoadContextOptions::Autoplay),
+                            playing_track: None,
+                        };
+                        if spirc.activate().is_ok() {
+                            let _ = spirc.load(LoadRequest::from_context_uri(uri, options));
+                        }
+                    }
+                }
+                _ = &mut stop => {
+                    *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = None;
+                    let _ = spirc.shutdown();
+                    let _ = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
+                    return;
+                }
             }
         }
     }
