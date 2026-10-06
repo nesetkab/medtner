@@ -40,23 +40,30 @@ struct API {
     }
 
     func playlists() async throws -> [Playlist] {
-        let response: Paged<Playlist>? = try await get("me/playlists", query: ["limit": "40"])
-        return response?.items.compactMap { $0 } ?? []
+        var all: [Playlist] = []
+        var offset = 0
+        while offset < 200 {
+            let response: Paged<Playlist>? = try await get("me/playlists", query: ["limit": "50", "offset": String(offset)])
+            all += response?.items.compactMap { $0 } ?? []
+            guard response?.next != nil else { break }
+            offset += 50
+        }
+        return all
     }
 
-    func playlistTracks(_ id: String) async throws -> [Track] {
-        let response: Paged<PlaylistEntry>? = try await get("playlists/\(id)/items", query: ["limit": "50"])
-        return response?.items.compactMap { $0?.content } ?? []
+    func playlistTracks(_ id: String, offset: Int = 0) async throws -> Page {
+        let response: Paged<PlaylistEntry>? = try await get("playlists/\(id)/items", query: ["limit": "50", "offset": String(offset)])
+        return Page(tracks: response?.items.compactMap { $0?.content } ?? [], hasMore: response?.next != nil)
     }
 
-    func likedTracks() async throws -> [Track] {
-        let response: Paged<SavedTrack>? = try await get("me/tracks", query: ["limit": "50"])
-        return response?.items.compactMap { $0?.track } ?? []
+    func likedTracks(offset: Int = 0) async throws -> Page {
+        let response: Paged<SavedTrack>? = try await get("me/tracks", query: ["limit": "50", "offset": String(offset)])
+        return Page(tracks: response?.items.compactMap { $0?.track } ?? [], hasMore: response?.next != nil)
     }
 
-    func albumTracks(_ id: String) async throws -> [Track] {
-        let response: Paged<Track>? = try await get("albums/\(id)/tracks", query: ["limit": "50"])
-        return response?.items.compactMap { $0 } ?? []
+    func albumTracks(_ id: String, offset: Int = 0) async throws -> Page {
+        let response: Paged<Track>? = try await get("albums/\(id)/tracks", query: ["limit": "50", "offset": String(offset)])
+        return Page(tracks: response?.items.compactMap { $0 } ?? [], hasMore: response?.next != nil)
     }
 
     func addToPlaylist(_ id: String, uris: [String]) async throws {

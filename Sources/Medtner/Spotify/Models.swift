@@ -89,6 +89,12 @@ struct RecentResponse: Codable {
 
 struct Paged<T: Codable>: Codable {
     let items: [T?]
+    let next: String?
+}
+
+struct Page {
+    let tracks: [Track]
+    let hasMore: Bool
 }
 
 struct Playlist: Codable, Hashable {

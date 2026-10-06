@@ -14,6 +14,8 @@ struct OpenCollection: Equatable {
     var tracks: [Tile] = []
     var loading = true
     var note: String?
+    var hasMore = false
+    var loadingMore = false
 }
 
 enum RepeatMode: String {
@@ -521,31 +523,53 @@ final class Player {
         if opened?.tile.id == tile.id { return closeCollection() }
         withAnimation(.snappy(duration: 0.2)) { opened = OpenCollection(tile: tile) }
         Task {
-            let parts = context.split(separator: ":").map(String.init)
-            var tracks: [Track] = []
             var note: String?
+            var page = Page(tracks: [], hasMore: false)
             do {
-                if parts.last == "collection" {
-                    tracks = try await api.likedTracks()
-                } else if parts.count == 3, parts[1] == "playlist" {
-                    tracks = try await api.playlistTracks(parts[2])
-                    if tracks.isEmpty { note = "Spotify only shares the songs in playlists you own. Press play to hear it." }
-                } else if parts.count == 3, parts[1] == "album" {
-                    tracks = try await api.albumTracks(parts[2])
+                page = try await fetchPage(of: context, offset: 0)
+                if page.tracks.isEmpty, context.contains(":playlist:") {
+                    note = "Spotify only shares the songs in playlists you own. Press play to hear it."
                 }
             } catch {
                 note = "Spotify only shares the songs in playlists you own. Press play to hear it."
             }
             guard opened?.tile.id == tile.id else { return }
-            let rows = tracks.enumerated().map { index, track in
-                Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
-                     art: track.artwork.best(near: 120) ?? tile.art, playURI: track.uri, contextURI: context)
-            }
+            let rows = rows(for: page.tracks, startingAt: 0, context: context, fallbackArt: tile.art)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 opened?.tracks = rows
                 opened?.loading = false
                 opened?.note = note
+                opened?.hasMore = page.hasMore
             }
+        }
+    }
+
+    func loadMoreTracks() {
+        guard let current = opened, current.hasMore, !current.loadingMore, let context = current.tile.contextURI else { return }
+        opened?.loadingMore = true
+        let offset = current.tracks.count
+        Task {
+            let page = try? await fetchPage(of: context, offset: offset)
+            guard opened?.tile.id == current.tile.id else { return }
+            let more = rows(for: page?.tracks ?? [], startingAt: offset, context: context, fallbackArt: current.tile.art)
+            opened?.tracks += more
+            opened?.hasMore = page?.hasMore ?? false
+            opened?.loadingMore = false
+        }
+    }
+
+    private func fetchPage(of context: String, offset: Int) async throws -> Page {
+        let parts = context.split(separator: ":").map(String.init)
+        if parts.last == "collection" { return try await api.likedTracks(offset: offset) }
+        if parts.count == 3, parts[1] == "playlist" { return try await api.playlistTracks(parts[2], offset: offset) }
+        if parts.count == 3, parts[1] == "album" { return try await api.albumTracks(parts[2], offset: offset) }
+        return Page(tracks: [], hasMore: false)
+    }
+
+    private func rows(for tracks: [Track], startingAt start: Int, context: String, fallbackArt: URL?) -> [Tile] {
+        tracks.enumerated().map { index, track in
+            Tile(id: "\(start + index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
+                 art: track.artwork.best(near: 120) ?? fallbackArt, playURI: track.uri, contextURI: context)
         }
     }
 

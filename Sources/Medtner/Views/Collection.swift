@@ -101,6 +101,15 @@ struct CollectionPanel: View {
                             player.queueUp(tile.playURI)
                         }
                         .trackMenu(tile.playURI, player: player)
+                        .onAppear {
+                            if index >= collection.tracks.count - 8 { player.loadMoreTracks() }
+                        }
+                    }
+                    if collection.loadingMore {
+                        EqualizerBars(playing: true, color: player.accentColor)
+                            .frame(width: 16, height: 14)
+                            .padding(.vertical, 10)
+                            .padding(.leading, 14)
                     }
                 }
                 .padding(.bottom, 12)
