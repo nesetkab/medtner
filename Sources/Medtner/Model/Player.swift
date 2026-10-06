@@ -450,11 +450,16 @@ final class Player {
             var started = false
             for attempt in 0..<8 {
                 do {
-                    try await api.transfer(to: Engine.deviceID, play: true)
+                    if device?.name == Engine.deviceName {
+                        try await api.play(device: Engine.deviceID)
+                    } else {
+                        try await api.transfer(to: Engine.deviceID, play: true)
+                    }
                     started = true
                     break
                 } catch {
                     try? await Task.sleep(for: .milliseconds(attempt < 3 ? 500 : 1_000))
+                    if attempt == 2, let state = try? await api.playback() { device = state.device }
                 }
             }
             if !started, let first = recent.first ?? playlists.first {
