@@ -77,6 +77,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
     private let nowPlaying: NowPlayingRow
     private let transport: TransportRow
     private let volume: VolumeRow
+    private let lyric: LyricLineRow
     private let extraItems: () -> [NSMenuItem]
     private var liveTimer: Timer?
     private(set) var isOpen = false
@@ -88,6 +89,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         nowPlaying = NowPlayingRow(player: player)
         transport = TransportRow(player: player)
         volume = VolumeRow(player: player)
+        lyric = LyricLineRow(player: player)
         super.init()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -117,16 +119,19 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         glyph.update(playing: player.isPlaying, accent: player.accent)
         item.length = StatusGlyph.width
         item.button?.toolTip = player.track.map { "\($0.name) — \($0.artistLine)" } ?? "Medtner"
-        _ = (player.artwork, player.volume, player.shuffle, player.repeatMode, player.durationMs)
+        _ = (player.artwork, player.volume, player.shuffle, player.repeatMode, player.durationMs, player.lyricIndex, player.lyrics)
         guard isOpen else { return }
         nowPlaying.needsDisplay = true
         transport.sync()
         volume.needsDisplay = true
+        lyric.needsDisplay = true
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
-        for view in [nowPlaying, transport, volume] as [NSView] {
+        let showLyric = UserDefaults.standard.object(forKey: "lyrics") as? Bool ?? true
+        let rows: [NSView] = showLyric && player.lyrics?.synced == true ? [nowPlaying, lyric, transport, volume] : [nowPlaying, transport, volume]
+        for view in rows {
             let row = NSMenuItem()
             row.view = view
             menu.addItem(row)

@@ -366,3 +366,29 @@ final class VolumeRow: MenuRow {
         needsDisplay = true
     }
 }
+
+@MainActor
+final class LyricLineRow: MenuRow {
+    private let player: Player
+
+    init(player: Player) {
+        self.player = player
+        super.init(height: 34)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let lyrics = player.lyrics, let index = player.lyricIndex, lyrics.lines.indices.contains(index) else {
+            MenuStyle.text("· · ·", size: 13, weight: .semibold, color: .tertiaryLabelColor)
+                .draw(at: NSPoint(x: MenuStyle.inset, y: 8))
+            return
+        }
+        let text = lyrics.lines[index].text.isEmpty ? "· · ·" : lyrics.lines[index].text
+        player.accent.setFill()
+        NSBezierPath(roundedRect: NSRect(x: MenuStyle.inset, y: 8, width: 3, height: 17), xRadius: 1.5, yRadius: 1.5).fill()
+        MenuStyle.text(text, size: 13, weight: .semibold)
+            .draw(with: NSRect(x: MenuStyle.inset + 11, y: 8, width: bounds.width - MenuStyle.inset * 2 - 11, height: 18),
+                  options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
