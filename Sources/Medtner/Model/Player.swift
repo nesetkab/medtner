@@ -447,25 +447,38 @@ final class Player {
         hold(5)
         Task {
             defer { waking = false }
-            var started = false
-            for attempt in 0..<8 {
-                do {
-                    if device?.name == Engine.deviceName {
-                        try await api.play(device: Engine.deviceID)
-                    } else {
-                        try await api.transfer(to: Engine.deviceID, play: true)
-                    }
-                    started = true
+            var playing = false
+            for attempt in 0..<6 {
+                let active = (try? await api.playback())?.device?.name == Engine.deviceName
+                if active {
+                    try? await api.play(device: Engine.deviceID)
+                } else {
+                    try? await api.transfer(to: Engine.deviceID, play: true)
+                }
+                try? await Task.sleep(for: .milliseconds(1_200))
+                if let state = try? await api.playback(), state.is_playing, state.device?.name == Engine.deviceName {
+                    playing = true
                     break
-                } catch {
-                    try? await Task.sleep(for: .milliseconds(attempt < 3 ? 500 : 1_000))
-                    if attempt == 2, let state = try? await api.playback() { device = state.device }
+                }
+                if attempt == 1 {
+                    try? await api.transfer(to: Engine.deviceID, play: true)
+                    try? await Task.sleep(for: .milliseconds(1_200))
+                    if let state = try? await api.playback(), state.is_playing {
+                        playing = true
+                        break
+                    }
+                }
+                if attempt >= 2, let first = recent.first ?? playlists.first {
+                    try? await api.play(device: Engine.deviceID, context: first.contextURI,
+                                        offset: first.contextURI == first.playURI ? nil : first.playURI)
+                    try? await Task.sleep(for: .milliseconds(1_200))
+                    if let state = try? await api.playback(), state.is_playing {
+                        playing = true
+                        break
+                    }
                 }
             }
-            if !started, let first = recent.first ?? playlists.first {
-                try? await api.play(device: Engine.deviceID, context: first.contextURI,
-                                    offset: first.contextURI == first.playURI ? nil : first.playURI)
-            }
+            if !playing { lastError = "Medtner's speaker didn't start. Try again in a moment." }
             try? await Task.sleep(for: .milliseconds(900))
             holdUntil = .distantPast
             await refresh()
