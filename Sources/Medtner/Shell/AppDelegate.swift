@@ -229,6 +229,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 switch event.charactersIgnoringModifiers {
                 case "/": self.openSearch()
                 case "s": self.player.toggleShuffle()
+                case "r": self.player.cycleRepeat()
                 default: return event
                 }
             }

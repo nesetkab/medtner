@@ -217,7 +217,7 @@ final class TransportRow: MenuRow {
 
     required init?(coder: NSCoder) { nil }
 
-    private enum Control: CaseIterable { case shuffle, previous, play, next }
+    private enum Control: CaseIterable { case shuffle, previous, play, next, repeating }
 
     private func rect(for control: Control) -> NSRect {
         let mid = bounds.midX
@@ -226,6 +226,7 @@ final class TransportRow: MenuRow {
         case .previous: return NSRect(x: mid - 66, y: 6, width: 36, height: 32)
         case .play: return NSRect(x: mid - 20, y: 4, width: 40, height: 36)
         case .next: return NSRect(x: mid + 30, y: 6, width: 36, height: 32)
+        case .repeating: return NSRect(x: bounds.width - MenuStyle.inset - 24, y: 8, width: 28, height: 28)
         }
     }
 
@@ -275,14 +276,9 @@ final class TransportRow: MenuRow {
             let color = NSColor.labelColor
             switch control {
             case .shuffle:
-                let tint: NSColor = player.shuffle ? player.accent : .secondaryLabelColor
-                let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [tint]))
-                if let image = NSImage(systemSymbolName: "shuffle", accessibilityDescription: "Shuffle")?.withSymbolConfiguration(config) {
-                    image.draw(in: NSRect(x: r.midX - image.size.width / 2, y: r.midY - image.size.height / 2,
-                                          width: image.size.width, height: image.size.height),
-                               from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-                }
+                symbol("shuffle", in: r, on: player.shuffle)
+            case .repeating:
+                symbol(player.repeatMode.symbol, in: r, on: player.repeatMode != .off)
             case .previous, .next:
                 let glyph = NSRect(x: r.midX - 7.5, y: r.midY - 7, width: 15, height: 14)
                 MenuStyle.soften(MenuStyle.skip(in: glyph, forward: control == .next), corner: 1.4, color: color)
@@ -293,9 +289,20 @@ final class TransportRow: MenuRow {
         }
     }
 
+    private func symbol(_ name: String, in r: NSRect, on: Bool) {
+        let tint: NSColor = on ? player.accent : .secondaryLabelColor
+        let config = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+            .applying(NSImage.SymbolConfiguration(paletteColors: [tint]))
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?.withSymbolConfiguration(config) else { return }
+        image.draw(in: NSRect(x: r.midX - image.size.width / 2, y: r.midY - image.size.height / 2,
+                              width: image.size.width, height: image.size.height),
+                   from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+    }
+
     override func mouseUp(with event: NSEvent) {
         switch control(at: convert(event.locationInWindow, from: nil)) {
         case .shuffle: player.toggleShuffle()
+        case .repeating: player.cycleRepeat()
         case .previous: player.previous()
         case .play: player.togglePlay()
         case .next: player.next()

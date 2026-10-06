@@ -173,6 +173,21 @@ struct Transport: View {
                     .frame(width: size * 0.95, height: size * 0.9)
             }
             if extras {
+                Button { player.cycleRepeat() } label: {
+                    Image(systemName: player.repeatMode.symbol)
+                        .font(.system(size: size * 0.8, weight: .semibold))
+                        .foregroundStyle(player.repeatMode == .off ? Palette.muted : player.accentColor)
+                        .contentTransition(.symbolEffect(.replace))
+                        .overlay(alignment: .bottom) {
+                            Circle()
+                                .fill(player.accentColor)
+                                .frame(width: 4, height: 4)
+                                .offset(y: 8)
+                                .opacity(player.repeatMode == .off ? 0 : 1)
+                        }
+                        .frame(height: size)
+                }
+                .help(player.repeatMode == .off ? "Repeat" : player.repeatMode == .context ? "Repeat all" : "Repeat one")
                 LikeButton(player: player, size: size)
             }
         }

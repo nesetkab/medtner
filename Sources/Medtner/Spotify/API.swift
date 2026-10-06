@@ -104,6 +104,10 @@ struct API {
         try await send("PUT", "me/player/shuffle", query: ["state": on ? "true" : "false"])
     }
 
+    func repeatMode(_ state: String) async throws {
+        try await send("PUT", "me/player/repeat", query: ["state": state])
+    }
+
     func addToQueue(_ uri: String) async throws {
         try await send("POST", "me/player/queue", query: ["uri": uri])
     }

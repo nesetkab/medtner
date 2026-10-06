@@ -16,6 +16,22 @@ struct OpenCollection: Equatable {
     var note: String?
 }
 
+enum RepeatMode: String {
+    case off
+    case context
+    case track
+
+    var next: RepeatMode {
+        switch self {
+        case .off: .context
+        case .context: .track
+        case .track: .off
+        }
+    }
+
+    var symbol: String { self == .track ? "repeat.1" : "repeat" }
+}
+
 enum Phase: Equatable {
     case needsClientID
     case needsSignIn
@@ -37,6 +53,7 @@ final class Player {
     var durationMs = 1
     var volume = 60
     var shuffle = false
+    var repeatMode: RepeatMode = .off
     var device: Device?
     var devices: [Device] = []
     var contextURI: String?
@@ -293,6 +310,7 @@ final class Player {
         syncLyrics()
         device = state.device
         shuffle = state.shuffle_state ?? false
+        repeatMode = RepeatMode(rawValue: state.repeat_state ?? "off") ?? .off
         contextURI = state.context?.uri
         if state.device?.name != Engine.deviceName, let v = state.device?.volume_percent, volumeTask == nil, Date() > volumeQuietUntil {
             volume = v
@@ -444,6 +462,13 @@ final class Player {
             }
             volumeTask = nil
         }
+    }
+
+    func cycleRepeat() {
+        repeatMode = repeatMode.next
+        let state = repeatMode.rawValue
+        hold()
+        perform { [api] _ in try await api.repeatMode(state) }
     }
 
     func toggleShuffle() {
