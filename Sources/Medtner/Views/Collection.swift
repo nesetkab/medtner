@@ -7,6 +7,7 @@ struct TrackMenu: ViewModifier {
     func body(content: Content) -> some View {
         content.contextMenu {
             if let uri, uri.contains(":track:") {
+                Button("Start Radio") { player.startRadio(uri) }
                 Button("Add to Queue") { player.queueUp(uri) }
                 Button("Save to Liked Songs") { player.like(uri) }
                 Menu("Add to Playlist") {

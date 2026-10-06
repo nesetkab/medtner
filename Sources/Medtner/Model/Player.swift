@@ -496,6 +496,16 @@ final class Player {
         }
     }
 
+    func startRadio(_ uri: String) {
+        if onEngine {
+            engine.audio.interrupt()
+            engine.audio.release()
+        }
+        hold(0.3)
+        perform { [api] device in try await api.play(device: device, uris: [uri]) }
+        flash("Radio keeps going after this song")
+    }
+
     func playFromQueue(_ index: Int) {
         if onEngine { engine.audio.interrupt() }
         let count = index + 1
