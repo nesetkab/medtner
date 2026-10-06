@@ -74,6 +74,7 @@ final class Engine {
         }
 
         let process = Process()
+        process.qualityOfService = .userInteractive
         process.executableURL = binary
         process.arguments = args
         var env = ProcessInfo.processInfo.environment

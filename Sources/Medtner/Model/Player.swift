@@ -228,7 +228,17 @@ final class Player {
             UserDefaults.standard.set(volume, forKey: "engineVolume")
             return
         }
-        if event == "playing" { engine.audio.release() }
+        switch event {
+        case "playing":
+            engine.audio.openGate()
+            engine.audio.release()
+        case "track_changed":
+            engine.audio.openGate()
+        case "seeked":
+            engine.audio.seeked()
+        default:
+            break
+        }
         switch event {
         case "track_changed", "playing", "paused", "seeked", "stopped", "session_connected", "shuffle_changed":
             poke()
@@ -385,6 +395,7 @@ final class Player {
     }
 
     func next() {
+        if onEngine { engine.audio.interrupt() }
         hold(1.5)
         if let upcoming = queuedTracks.first {
             queuedTracks.removeFirst()
@@ -400,11 +411,13 @@ final class Player {
     }
 
     func previous() {
+        if onEngine { engine.audio.interrupt() }
         hold(0.6)
         perform { [api] _ in try await api.previous() }
     }
 
     func seek(to fraction: Double) {
+        if onEngine { engine.audio.interrupt() }
         let ms = Int(Double(durationMs) * min(max(fraction, 0), 1))
         progressMs = ms
         progressStamp = Date()
@@ -441,7 +454,10 @@ final class Player {
     }
 
     func play(_ tile: Tile) {
-        if onEngine { engine.audio.release() }
+        if onEngine {
+            engine.audio.interrupt()
+            engine.audio.release()
+        }
         hold(0.3)
         perform { [api] device in
             if let context = tile.contextURI {
@@ -454,6 +470,7 @@ final class Player {
     }
 
     func playFromQueue(_ index: Int) {
+        if onEngine { engine.audio.interrupt() }
         let count = index + 1
         hold(0.6)
         perform { [api] _ in

@@ -8,11 +8,18 @@ final class AudioOut: @unchecked Sendable {
     private let slots = DispatchSemaphore(value: 13)
     private let lock = NSLock()
     private let framesPerChunk = 2_048
+    private let control = DispatchQueue(label: "medtner.audio.control", qos: .userInteractive)
     private var held = false
+    private var gated = false
+    private var gateDeadline = Date.distantPast
     private var idleWork: DispatchWorkItem?
     private var generation = 0
     private var lows: (Float, Float, Float) = (0, 0, 0)
     private var peaks: [Float] = [0.02, 0.02, 0.02, 0.02]
+    private var userVolume: Float = 0.36
+    private var fadeLevel: Float = 1
+    private var fadeTimer: DispatchSourceTimer?
+    private var activity: NSObjectProtocol?
     var onLevels: (([Float]) -> Void)?
 
     init() {
@@ -25,22 +32,82 @@ final class AudioOut: @unchecked Sendable {
 
     func setVolume(_ percent: Int) {
         let linear = Float(min(max(percent, 0), 100)) / 100
-        engine.mainMixerNode.outputVolume = linear * linear
+        control.async {
+            self.userVolume = linear * linear
+            self.applyVolume()
+        }
     }
 
     func hold() {
         lock.lock()
         held = true
         lock.unlock()
-        node.pause()
-        scheduleIdle()
+        fade(to: 0, over: 0.18) { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let stillHeld = self.held
+            self.lock.unlock()
+            guard stillHeld else { return }
+            self.node.pause()
+            self.scheduleIdle()
+        }
     }
 
     func release() {
         lock.lock()
         held = false
         lock.unlock()
+        control.async {
+            self.fadeTimer?.cancel()
+            self.fadeLevel = 0
+            self.applyVolume()
+        }
         ensureRunning()
+        fade(to: 1, over: 0.22, then: nil)
+    }
+
+    func interrupt() {
+        lock.lock()
+        gated = true
+        gateDeadline = Date().addingTimeInterval(3)
+        lock.unlock()
+        fade(to: 0, over: 0.04) { [weak self] in
+            guard let self else { return }
+            self.node.stop()
+            self.fadeLevel = 1
+            self.applyVolume()
+            self.lock.lock()
+            let isHeld = self.held
+            self.lock.unlock()
+            if !isHeld, self.engine.isRunning { self.node.play() }
+        }
+    }
+
+    func flush() {
+        control.async {
+            self.fadeTimer?.cancel()
+            self.node.stop()
+            self.fadeLevel = 1
+            self.applyVolume()
+            self.lock.lock()
+            let isHeld = self.held
+            self.lock.unlock()
+            if !isHeld, self.engine.isRunning { self.node.play() }
+        }
+    }
+
+    func openGate() {
+        lock.lock()
+        gated = false
+        lock.unlock()
+    }
+
+    func seeked() {
+        lock.lock()
+        let wasGated = gated
+        gated = false
+        lock.unlock()
+        if !wasGated { flush() }
     }
 
     func stream(from handle: FileHandle) {
@@ -80,9 +147,11 @@ final class AudioOut: @unchecked Sendable {
             }
             lock.lock()
             let stale = mine != generation
+            if gated, Date() > gateDeadline { gated = false }
+            let dropping = gated
             lock.unlock()
             let usable = filled - filled % 4
-            guard !stale, usable > 0, let (buffer, levels) = convert(chunk.prefix(usable)) else {
+            guard !stale, !dropping, usable > 0, let (buffer, levels) = convert(chunk.prefix(usable)) else {
                 slots.signal()
                 if ended || stale {
                     try? handle.close()
@@ -139,6 +208,36 @@ final class AudioOut: @unchecked Sendable {
         return (buffer, levels)
     }
 
+    private func fade(to target: Float, over seconds: Double, then done: (() -> Void)?) {
+        control.async {
+            self.fadeTimer?.cancel()
+            let start = self.fadeLevel
+            let steps = max(Int(seconds / 0.01), 1)
+            var step = 0
+            let timer = DispatchSource.makeTimerSource(queue: self.control)
+            timer.schedule(deadline: .now(), repeating: .milliseconds(10), leeway: .milliseconds(2))
+            timer.setEventHandler { [weak self] in
+                guard let self else { return }
+                step += 1
+                let t = Float(step) / Float(steps)
+                let eased = t * t * (3 - 2 * t)
+                self.fadeLevel = start + (target - start) * min(eased, 1)
+                self.applyVolume()
+                if step >= steps {
+                    timer.cancel()
+                    self.fadeTimer = nil
+                    done?()
+                }
+            }
+            self.fadeTimer = timer
+            timer.resume()
+        }
+    }
+
+    private func applyVolume() {
+        engine.mainMixerNode.outputVolume = userVolume * fadeLevel
+    }
+
     private func ensureRunning() {
         lock.lock()
         let isHeld = held
@@ -149,6 +248,7 @@ final class AudioOut: @unchecked Sendable {
         if !engine.isRunning {
             engine.prepare()
             try? engine.start()
+            beginActivity()
         }
         if !node.isPlaying { node.play() }
         scheduleIdle()
@@ -159,12 +259,30 @@ final class AudioOut: @unchecked Sendable {
             guard let self else { return }
             self.node.pause()
             self.engine.pause()
+            self.endActivity()
         }
         lock.lock()
         idleWork?.cancel()
         idleWork = work
         lock.unlock()
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: work)
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 6, execute: work)
+    }
+
+    private func beginActivity() {
+        lock.lock()
+        defer { lock.unlock() }
+        guard activity == nil else { return }
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .latencyCritical, .idleSystemSleepDisabled],
+            reason: "Playing music"
+        )
+    }
+
+    private func endActivity() {
+        lock.lock()
+        defer { lock.unlock() }
+        if let activity { ProcessInfo.processInfo.endActivity(activity) }
+        activity = nil
     }
 
     private func restart() {
