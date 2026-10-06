@@ -5,48 +5,61 @@ struct LyricsPanel: View {
     let lyrics: Lyrics
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: lyrics.synced ? 14 : 8) {
-                    Color.clear.frame(height: 70)
-                    ForEach(lyrics.lines) { line in
-                        LyricRow(line: line, place: place(of: line), synced: lyrics.synced, accent: player.accentColor) {
-                            player.seek(toMs: line.time)
-                        }
-                        .id(line.id)
-                    }
-                    Color.clear.frame(height: 180)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if lyrics.synced {
+                synced
+            } else {
+                plain
             }
-            .onAppear { center(proxy, animated: false) }
-            .onChange(of: player.lyricIndex) { _, _ in center(proxy, animated: true) }
         }
         .mask(
             LinearGradient(stops: [
                 .init(color: .clear, location: 0),
-                .init(color: .black, location: 0.16),
+                .init(color: .black, location: 0.14),
                 .init(color: .black, location: 0.78),
                 .init(color: .clear, location: 1),
             ], startPoint: .top, endPoint: .bottom)
         )
     }
 
-    private func place(of line: LyricLine) -> LyricRow.Place {
-        guard lyrics.synced, let index = player.lyricIndex else { return lyrics.synced ? .upcoming : .plain }
-        if line.id == index { return .current }
-        return line.id < index ? .past : .upcoming
+    private var synced: some View {
+        let index = player.lyricIndex ?? -1
+        let lower = max(0, index - 2)
+        let upper = min(lyrics.lines.count - 1, max(index, 0) + 6)
+        return VStack(alignment: .leading, spacing: 14) {
+            if lower <= upper {
+                ForEach(lyrics.lines[lower...upper]) { line in
+                    LyricRow(line: line, place: place(of: line, current: index), synced: true, accent: player.accentColor) {
+                        player.seek(toMs: line.time)
+                    }
+                    .transition(.asymmetric(
+                        insertion: .offset(y: 30).combined(with: .opacity),
+                        removal: .offset(y: -30).combined(with: .opacity)
+                    ))
+                }
+            }
+        }
+        .padding(.top, index < 2 ? CGFloat(2 - max(index, 0)) * 44 + 24 : 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .animation(.spring(response: 0.75, dampingFraction: 0.9), value: index)
     }
 
-    private func center(_ proxy: ScrollViewProxy, animated: Bool) {
-        guard let index = player.lyricIndex else { return }
-        if animated {
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.88)) {
-                proxy.scrollTo(index, anchor: UnitPoint(x: 0, y: 0.32))
+    private var plain: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                Color.clear.frame(height: 40)
+                ForEach(lyrics.lines) { line in
+                    LyricRow(line: line, place: .plain, synced: false, accent: player.accentColor) {}
+                }
+                Color.clear.frame(height: 120)
             }
-        } else {
-            proxy.scrollTo(index, anchor: UnitPoint(x: 0, y: 0.32))
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func place(of line: LyricLine, current: Int) -> LyricRow.Place {
+        if line.id == current { return .current }
+        return line.id < current ? .past : .upcoming
     }
 }
 
@@ -67,8 +80,9 @@ struct LyricRow: View {
             .lineSpacing(2)
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
-            .scaleEffect(place == .current ? 1 : 0.97, anchor: .leading)
-            .animation(.spring(response: 0.45, dampingFraction: 0.8), value: place)
+            .scaleEffect(place == .current ? 1 : 0.95, anchor: .leading)
+            .blur(radius: place == .current || place == .plain || hovering ? 0 : 0.6)
+            .animation(.spring(response: 0.75, dampingFraction: 0.9), value: place)
             .contentShape(Rectangle())
             .onHover { hovering = $0 && synced }
             .pointerStyle(synced ? .link : .default)
