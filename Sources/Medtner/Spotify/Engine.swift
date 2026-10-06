@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 @MainActor
@@ -11,6 +12,7 @@ final class Engine {
     }
 
     static let deviceName = "Medtner"
+    static let deviceID = Insecure.SHA1.hash(data: Data(deviceName.utf8)).map { String(format: "%02x", $0) }.joined()
     nonisolated static let eventNotification = Notification.Name("app.medtner.engine.event")
 
     private(set) var state: State = .off {
@@ -19,6 +21,7 @@ final class Engine {
     var onChange: ((State) -> Void)?
     var onLoginURL: ((URL) -> Void)?
     var onEvent: ((String) -> Void)?
+    var onTrack: ((Track) -> Void)?
     private var builtin = false
     private var bridge: EngineBridge?
 
@@ -103,7 +106,26 @@ final class Engine {
         state = hasCredentials ? .running : .waitingForLogin
     }
 
+    private struct EngineTrack: Decodable {
+        let uri: String
+        let name: String
+        let artists: [String]
+        let album: String
+        let duration_ms: Int
+        let cover: String
+    }
+
     private func handleBuiltin(_ name: String, _ value: Int64) {
+        if name.hasPrefix("track_info:") {
+            guard let data = name.dropFirst("track_info:".count).data(using: .utf8),
+                  let info = try? JSONDecoder().decode(EngineTrack.self, from: data) else { return }
+            let images = info.cover.isEmpty ? [] : [SpotifyImage(url: info.cover, width: 640)]
+            let track = Track(id: info.uri.split(separator: ":").last.map(String.init), uri: info.uri, name: info.name,
+                              duration_ms: info.duration_ms, artists: info.artists.map { Artist(name: $0, uri: nil) },
+                              album: Album(name: info.album, uri: "", images: images, artists: nil), images: nil, show: nil)
+            onTrack?(track)
+            return
+        }
         switch name {
         case "needs_login":
             state = .waitingForLogin

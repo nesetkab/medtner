@@ -14,6 +14,7 @@ use librespot_playback::convert::Converter;
 use librespot_playback::decoder::AudioPacket;
 use librespot_playback::mixer::softmixer::SoftMixer;
 use librespot_playback::mixer::{Mixer, MixerConfig, NoOpVolume};
+use librespot_metadata::audio::{AudioItem, UniqueFields};
 use librespot_playback::player::{Player, PlayerEvent};
 use sha1::{Digest, Sha1};
 use tokio::sync::oneshot;
@@ -104,6 +105,43 @@ fn string(pointer: *const c_char) -> String {
         return String::new();
     }
     unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned()
+}
+
+fn quote(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 2);
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn track_json(item: &AudioItem) -> String {
+    let (artists, album) = match &item.unique_fields {
+        UniqueFields::Track { artists, album, .. } => (artists.iter().map(|a| a.name.clone()).collect::<Vec<_>>(), album.clone()),
+        UniqueFields::Episode { show_name, .. } => (vec![show_name.clone()], show_name.clone()),
+        UniqueFields::Local { artists, album, .. } => (artists.iter().cloned().collect(), album.clone().unwrap_or_default()),
+    };
+    let cover = item.covers.iter().max_by_key(|c| c.width).map(|c| c.url.clone()).unwrap_or_default();
+    let artists = artists.iter().map(|a| quote(a)).collect::<Vec<_>>().join(",");
+    format!(
+        "{{\"uri\":{},\"name\":{},\"artists\":[{}],\"album\":{},\"duration_ms\":{},\"cover\":{}}}",
+        quote(&item.uri),
+        quote(&item.name),
+        artists,
+        quote(&album),
+        item.duration_ms,
+        quote(&cover)
+    )
 }
 
 fn device_id(name: &str) -> String {
@@ -235,7 +273,10 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
                 PlayerEvent::Paused { position_ms, .. } => event_bridge.emit("paused", position_ms as i64),
                 PlayerEvent::Seeked { position_ms, .. } => event_bridge.emit("seeked", position_ms as i64),
                 PlayerEvent::Stopped { .. } => event_bridge.emit("stopped", 0),
-                PlayerEvent::TrackChanged { .. } => event_bridge.emit("track_changed", 0),
+                PlayerEvent::TrackChanged { audio_item } => {
+                    event_bridge.emit(&format!("track_info:{}", track_json(&audio_item)), 0);
+                    event_bridge.emit("track_changed", 0);
+                }
                 PlayerEvent::VolumeChanged { volume } => event_bridge.emit("volume_changed", volume as i64),
                 PlayerEvent::ShuffleChanged { .. } => event_bridge.emit("shuffle_changed", 0),
                 PlayerEvent::RepeatChanged { .. } => event_bridge.emit("repeat_changed", 0),

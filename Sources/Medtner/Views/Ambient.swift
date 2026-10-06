@@ -16,6 +16,14 @@ final class BlobView: NSView {
     var spread: CGFloat = 1
     var glow: Float = 1
 
+    private static let motion: [(attack: CGFloat, release: CGFloat, rest: CGFloat, reach: CGFloat, dim: CGFloat, flash: CGFloat)] = [
+        (0.7, 0.09, 0.62, 0.8, 0.28, 0.6),
+        (0.55, 0.14, 0.7, 0.5, 0.3, 0.45),
+        (0.6, 0.2, 0.72, 0.48, 0.3, 0.5),
+        (0.9, 0.38, 0.8, 0.34, 0.22, 0.7),
+        (0.4, 0.08, 0.78, 0.3, 0.32, 0.3),
+    ]
+
     private let anchors: [CGPoint] = [
         CGPoint(x: -0.26, y: -0.24),
         CGPoint(x: 0.3, y: 0.26),
@@ -91,11 +99,12 @@ final class BlobView: NSView {
         let overall = levels.reduce(0, +) / Float(max(levels.count, 1))
         for (i, blob) in blobs.enumerated() {
             let target = CGFloat(i < levels.count ? levels[i] : overall)
-            let rate: CGFloat = target > smoothed[i] ? 0.55 : 0.14
+            let motion = Self.motion[i]
+            let rate = target > smoothed[i] ? motion.attack : motion.release
             smoothed[i] += (target - smoothed[i]) * rate
-            let scale = 0.7 + smoothed[i] * 0.55
+            let scale = motion.rest + smoothed[i] * motion.reach
             blob.transform = CATransform3DMakeScale(scale, scale, 1)
-            blob.opacity = min(1, Float(0.3 + smoothed[i] * 0.5) * glow)
+            blob.opacity = min(1, Float(motion.dim + smoothed[i] * motion.flash) * glow)
         }
         CATransaction.commit()
     }

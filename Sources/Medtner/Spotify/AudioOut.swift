@@ -14,8 +14,15 @@ final class AudioOut: @unchecked Sendable {
     private var gateDeadline = Date.distantPast
     private var idleWork: DispatchWorkItem?
     private var generation = 0
-    private var lows: (Float, Float, Float) = (0, 0, 0)
     private var peaks: [Float] = [0.02, 0.02, 0.02, 0.02]
+    private var risePeaks: [Float] = [0.01, 0.01, 0.01, 0.01]
+    private var averages: [Float] = [0, 0, 0, 0]
+    private var bassA = Biquad.lowPass(140)
+    private var bassB = Biquad.lowPass(140)
+    private var lowMidBand = Biquad.bandPass(350, q: 0.9)
+    private var midBand = Biquad.bandPass(1_500, q: 0.8)
+    private var trebleA = Biquad.highPass(5_000)
+    private var trebleB = Biquad.highPass(5_000)
     private var userVolume: Float = 0.36
     private var fadeLevel: Float = 1
     private var fadeTimer: DispatchSourceTimer?
@@ -235,25 +242,26 @@ final class AudioOut: @unchecked Sendable {
     }
 
     private func levels(_ left: UnsafeMutablePointer<Float>, _ right: UnsafeMutablePointer<Float>, frames: Int) -> [Float] {
-        var (low, lowMid, mid) = lows
         var energy: [Float] = [0, 0, 0, 0]
         for i in 0..<frames {
             let m = (left[i] + right[i]) * 0.5
-            low += 0.021 * (m - low)
-            lowMid += 0.069 * (m - lowMid)
-            mid += 0.248 * (m - mid)
-            let bands = (low, lowMid - low, mid - lowMid, m - mid)
-            energy[0] += bands.0 * bands.0
-            energy[1] += bands.1 * bands.1
-            energy[2] += bands.2 * bands.2
-            energy[3] += bands.3 * bands.3
+            let bass = bassB.process(bassA.process(m))
+            let lowMid = lowMidBand.process(m)
+            let mid = midBand.process(m)
+            let treble = trebleB.process(trebleA.process(m))
+            energy[0] += bass * bass
+            energy[1] += lowMid * lowMid
+            energy[2] += mid * mid
+            energy[3] += treble * treble
         }
-        lows = (low, lowMid, mid)
         var result: [Float] = [0, 0, 0, 0]
         for band in 0..<4 {
             let rms = (energy[band] / Float(frames)).squareRoot()
-            peaks[band] = max(rms, peaks[band] * 0.996, 0.002)
-            result[band] = min(rms / peaks[band], 1)
+            averages[band] += (rms - averages[band]) * 0.06
+            let rise = max(0, rms - averages[band] * 1.05)
+            peaks[band] = max(rms, peaks[band] * 0.997, 0.0005)
+            risePeaks[band] = max(rise, risePeaks[band] * 0.995, 0.0002)
+            result[band] = min(0.3 * rms / peaks[band] + 0.7 * rise / risePeaks[band], 1)
         }
         return result
     }
@@ -339,5 +347,47 @@ final class AudioOut: @unchecked Sendable {
         engine.stop()
         engine.connect(node, to: engine.mainMixerNode, format: format)
         ensureRunning()
+    }
+}
+
+struct Biquad {
+    private var b0: Float, b1: Float, b2: Float, a1: Float, a2: Float
+    private var x1: Float = 0, x2: Float = 0, y1: Float = 0, y2: Float = 0
+
+    private init(b0: Double, b1: Double, b2: Double, a0: Double, a1: Double, a2: Double) {
+        self.b0 = Float(b0 / a0)
+        self.b1 = Float(b1 / a0)
+        self.b2 = Float(b2 / a0)
+        self.a1 = Float(a1 / a0)
+        self.a2 = Float(a2 / a0)
+    }
+
+    private static func parts(_ frequency: Double, q: Double) -> (cos: Double, alpha: Double) {
+        let w = 2 * Double.pi * frequency / 44_100
+        return (cos(w), sin(w) / (2 * q))
+    }
+
+    static func lowPass(_ frequency: Double, q: Double = 0.7071) -> Biquad {
+        let (c, alpha) = parts(frequency, q: q)
+        return Biquad(b0: (1 - c) / 2, b1: 1 - c, b2: (1 - c) / 2, a0: 1 + alpha, a1: -2 * c, a2: 1 - alpha)
+    }
+
+    static func highPass(_ frequency: Double, q: Double = 0.7071) -> Biquad {
+        let (c, alpha) = parts(frequency, q: q)
+        return Biquad(b0: (1 + c) / 2, b1: -(1 + c), b2: (1 + c) / 2, a0: 1 + alpha, a1: -2 * c, a2: 1 - alpha)
+    }
+
+    static func bandPass(_ frequency: Double, q: Double) -> Biquad {
+        let (c, alpha) = parts(frequency, q: q)
+        return Biquad(b0: alpha, b1: 0, b2: -alpha, a0: 1 + alpha, a1: -2 * c, a2: 1 - alpha)
+    }
+
+    mutating func process(_ x: Float) -> Float {
+        let y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+        x2 = x1
+        x1 = x
+        y2 = y1
+        y1 = y
+        return y
     }
 }

@@ -106,6 +106,8 @@ final class Player {
     @ObservationIgnored private var volumeQuietUntil = Date.distantPast
     @ObservationIgnored private var artURL: URL?
     @ObservationIgnored private var queuedTracks: [Track] = []
+    @ObservationIgnored private var trustEngineUntil = Date.distantPast
+    @ObservationIgnored private var waking = false
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
@@ -143,6 +145,9 @@ final class Player {
         }
         engine.onEvent = { [weak self] raw in
             self?.handleEngineEvent(raw)
+        }
+        engine.onTrack = { [weak self] track in
+            self?.engineTrack(track)
         }
         DistributedNotificationCenter.default().addObserver(forName: Engine.eventNotification, object: nil, queue: .main) { [weak self] note in
             let event = note.object as? String ?? ""
@@ -293,19 +298,11 @@ final class Player {
             return
         }
         let changed = state.item?.uri != track?.uri
-        if changed {
-            withAnimation(.easeOut(duration: 0.8)) { track = state.item }
-            loadArtwork()
-            loadLyrics()
-            liked = false
-            if let uri = state.item?.uri {
-                Task {
-                    let result = (try? await api.libraryContains([uri]))?.first ?? false
-                    if track?.uri == uri { liked = result }
-                }
-            }
-            Task { await loadUpNext() }
-            if shelfMode == .queue { Task { await loadShelf() } }
+        if changed, onEngine, Date() < trustEngineUntil { return }
+        if changed, let item = state.item {
+            adopt(item)
+        } else if changed {
+            withAnimation(.easeOut(duration: 0.8)) { track = nil }
         }
         isPlaying = state.is_playing
         durationMs = max(state.item?.duration_ms ?? 1, 1)
@@ -319,6 +316,37 @@ final class Player {
         contextURI = state.context?.uri
         if state.device?.name != Engine.deviceName, let v = state.device?.volume_percent, volumeTask == nil, Date() > volumeQuietUntil {
             volume = v
+        }
+    }
+
+    private func adopt(_ item: Track) {
+        withAnimation(.easeOut(duration: 0.8)) { track = item }
+        loadArtwork()
+        loadLyrics()
+        liked = false
+        let uri = item.uri
+        Task {
+            let result = (try? await api.libraryContains([uri]))?.first ?? false
+            if track?.uri == uri { liked = result }
+        }
+        Task { await loadUpNext() }
+        if shelfMode == .queue { Task { await loadShelf() } }
+    }
+
+    private func engineTrack(_ item: Track) {
+        trustEngineUntil = Date().addingTimeInterval(8)
+        guard item.uri != track?.uri else { return }
+        let full = queuedTracks.first { $0.uri == item.uri }
+        queuedTracks.removeAll { $0.uri == item.uri }
+        adopt(full ?? item)
+        durationMs = max(item.duration_ms, 1)
+        progressMs = 0
+        progressStamp = Date()
+        progressEpoch &+= 1
+        syncLyrics()
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            await refresh()
         }
     }
 
@@ -375,7 +403,7 @@ final class Player {
     }
 
     func togglePlay() {
-        if device == nil {
+        if device == nil || (onEngine && !isPlaying) {
             wakeAndResume()
             return
         }
@@ -395,25 +423,34 @@ final class Player {
     }
 
     private func wakeAndResume() {
+        guard !waking else { return }
+        waking = true
+        progressMs = position()
+        progressStamp = Date()
+        progressEpoch &+= 1
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
         engine.audio.release()
-        hold(2)
+        hold(5)
         Task {
-            guard let id = await engineDeviceID(wait: 8) else {
-                lastError = "Medtner's speaker isn't ready yet."
-                isPlaying = false
-                return
-            }
-            do {
-                try await api.transfer(to: id, play: true)
-            } catch {
-                if let first = recent.first ?? playlists.first {
-                    try? await api.play(device: id, context: first.contextURI, offset: first.contextURI == first.playURI ? nil : first.playURI)
+            defer { waking = false }
+            var started = false
+            for attempt in 0..<8 {
+                do {
+                    try await api.transfer(to: Engine.deviceID, play: true)
+                    started = true
+                    break
+                } catch {
+                    try? await Task.sleep(for: .milliseconds(attempt < 3 ? 500 : 1_000))
                 }
             }
-            try? await Task.sleep(for: .milliseconds(600))
+            if !started, let first = recent.first ?? playlists.first {
+                try? await api.play(device: Engine.deviceID, context: first.contextURI,
+                                    offset: first.contextURI == first.playURI ? nil : first.playURI)
+            }
+            try? await Task.sleep(for: .milliseconds(900))
             holdUntil = .distantPast
             await refresh()
+            syncLyrics()
         }
     }
 
