@@ -20,7 +20,6 @@ final class AudioOut: @unchecked Sendable {
     private var fadeLevel: Float = 1
     private var fadeTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
-    private var pendingFrames = 0
     var onLevels: (([Float]) -> Void)?
 
     init() {
@@ -97,14 +96,6 @@ final class AudioOut: @unchecked Sendable {
         }
     }
 
-    var latencyMs: Int {
-        lock.lock()
-        let pending = pendingFrames
-        lock.unlock()
-        let output = engine.isRunning ? engine.outputNode.presentationLatency : 0
-        return pending * 1000 / 44_100 + Int(output * 1000) + 46
-    }
-
     func openGate() {
         lock.lock()
         gated = false
@@ -168,17 +159,9 @@ final class AudioOut: @unchecked Sendable {
                 }
                 continue
             }
-            let frames = Int(buffer.frameLength)
-            lock.lock()
-            pendingFrames += frames
-            lock.unlock()
             node.scheduleBuffer(buffer, completionCallbackType: .dataRendered) { [weak self] _ in
-                guard let self else { return }
-                self.lock.lock()
-                self.pendingFrames = max(0, self.pendingFrames - frames)
-                self.lock.unlock()
-                self.slots.signal()
-                self.onLevels?(levels)
+                self?.slots.signal()
+                self?.onLevels?(levels)
             }
             ensureRunning()
             if ended {

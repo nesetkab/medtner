@@ -611,15 +611,10 @@ final class Player {
         }
     }
 
-    func heardPosition() -> Int {
-        guard onEngine else { return position() }
-        return max(0, position() - engine.audio.latencyMs)
-    }
-
     func syncLyrics() {
         lyricsClock?.cancel()
         guard let lyrics, lyrics.synced, lyrics.trackURI == track?.uri else { return }
-        let now = heardPosition() + 350
+        let now = position() + 100
         let index = lyrics.index(at: now)
         if index != lyricIndex { lyricIndex = index }
         guard isPlaying else { return }
