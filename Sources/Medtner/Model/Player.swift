@@ -202,12 +202,12 @@ final class Player {
     }
 
     private func nextInterval() -> Double {
-        let base: Double
-        if visibleSurfaces > 0 {
-            base = isPlaying ? 2.5 : 6
-        } else {
-            base = isPlaying ? 8 : 30
+        let visible = visibleSurfaces > 0
+        if device?.name == Engine.deviceName && engine.state == .running {
+            if visible { return isPlaying ? 10 : 20 }
+            return isPlaying ? 30 : 90
         }
+        let base: Double = visible ? (isPlaying ? 3 : 8) : (isPlaying ? 10 : 45)
         guard isPlaying else { return base }
         let remaining = Double(durationMs - position()) / 1000
         return max(0.4, min(base, remaining + 0.35))
