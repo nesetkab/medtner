@@ -1,14 +1,20 @@
 # Medtner, a lightweight Spotify player
 
-![an image of medtner](screenshot.png)
+![medtner's main window, playing a song with synced lyrics](docs/main.webp)
 
 medtner was made to increase performance times while still giving you all the features you need. 
 it has:
 - searching
 - queue management
-- playlists 
-- menu bar controls
-- ambient animations
+- playlists, albums and liked songs
+- synced lyrics
+- a full screen mode made for a second monitor
+- menu bar controls, media keys and Control Center
+- ambient animations that move with the music
+
+it idles at 0% CPU and stays under 100 MB of memory. the Spotify app never has to open.
+
+![medtner's full screen view with lyrics, a clock and up next](docs/fullscreen.webp)
 
 ## install
 
@@ -45,6 +51,9 @@ that's it. Medtner remembers everything, so you won't see these steps again.
 - click the **+** after the skip button to save a song to Liked Songs, click it again to add it to a playlist
 - right-click any song for Add to Queue, Save to Liked Songs and Add to Playlist
 - click a tile on the right to open a playlist or album, and click it again to close it
+- the speech bubble next to search turns lyrics on and off. click a lyric line to jump there
+- click the green button in the corner for full screen. move the mouse to bring up every control, press **esc** to leave
+- your keyboard's media keys, AirPods and Control Center control Medtner too
 - the equalizer in your menu bar is a mini controller. closing the window keeps Medtner running there
 
 ## update
@@ -65,6 +74,7 @@ add `--all` after `uninstall` to also remove your saved login and cache.
 - **nothing plays**: press play once in Medtner. it wakes up its speaker and resumes where you left off
 - **the Dock icon looks black in Finder or Launchpad**: that's macOS's dark icon style. the Dock shows the real icon while Medtner is running
 - **playlist songs don't show up**: Spotify only lets developer apps list songs in playlists you own. you can still play other playlists
+- **no lyrics for a song**: lyrics come from [LRCLIB](https://lrclib.net), a free lyrics database. some songs aren't in it yet
 
 ## build from source
 
@@ -76,4 +86,4 @@ needs the Xcode Command Line Tools (`xcode-select --install`) and librespot (`br
 
 ## credits
 
-audio playback uses [librespot](https://github.com/librespot-org/librespot) (MIT), bundled inside the app. Medtner isn't affiliated with Spotify.
+audio playback uses [librespot](https://github.com/librespot-org/librespot) (MIT), bundled inside the app. lyrics come from [LRCLIB](https://lrclib.net). Medtner isn't affiliated with Spotify.
