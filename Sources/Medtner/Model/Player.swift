@@ -141,6 +141,9 @@ final class Player {
         engine.onLoginURL = { url in
             Browser.open(url)
         }
+        engine.onEvent = { [weak self] raw in
+            self?.handleEngineEvent(raw)
+        }
         DistributedNotificationCenter.default().addObserver(forName: Engine.eventNotification, object: nil, queue: .main) { [weak self] note in
             let event = note.object as? String ?? ""
             Task { @MainActor in self?.handleEngineEvent(event) }

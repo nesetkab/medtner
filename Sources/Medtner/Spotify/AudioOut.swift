@@ -20,6 +20,8 @@ final class AudioOut: @unchecked Sendable {
     private var fadeLevel: Float = 1
     private var fadeTimer: DispatchSourceTimer?
     private var activity: NSObjectProtocol?
+    private var staging = [Float](repeating: 0, count: 4_096)
+    private var stagingFill = 0
     var onLevels: (([Float]) -> Void)?
 
     init() {
@@ -159,16 +161,60 @@ final class AudioOut: @unchecked Sendable {
                 }
                 continue
             }
-            node.scheduleBuffer(buffer, completionCallbackType: .dataRendered) { [weak self] _ in
-                self?.slots.signal()
-                self?.onLevels?(levels)
-            }
-            ensureRunning()
+            schedule(buffer, levels: levels)
             if ended {
                 try? handle.close()
                 return
             }
         }
+    }
+
+    func push(_ samples: UnsafePointer<Float>, count: Int) {
+        let capacity = framesPerChunk * 2
+        var offset = 0
+        while offset < count {
+            let take = min(capacity - stagingFill, count - offset)
+            staging.withUnsafeMutableBufferPointer { destination in
+                (destination.baseAddress! + stagingFill).update(from: samples + offset, count: take)
+            }
+            stagingFill += take
+            offset += take
+            if stagingFill == capacity {
+                emitStaged()
+                stagingFill = 0
+            }
+        }
+    }
+
+    private func emitStaged() {
+        slots.wait()
+        lock.lock()
+        if gated, Date() > gateDeadline { gated = false }
+        let dropping = gated
+        lock.unlock()
+        let frames = framesPerChunk
+        guard !dropping, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+              let channels = buffer.floatChannelData else {
+            slots.signal()
+            return
+        }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        let left = channels[0], right = channels[1]
+        staging.withUnsafeBufferPointer { interleaved in
+            for i in 0..<frames {
+                left[i] = interleaved[i * 2]
+                right[i] = interleaved[i * 2 + 1]
+            }
+        }
+        schedule(buffer, levels: levels(left, right, frames: frames))
+    }
+
+    private func schedule(_ buffer: AVAudioPCMBuffer, levels: [Float]) {
+        node.scheduleBuffer(buffer, completionCallbackType: .dataRendered) { [weak self] _ in
+            self?.slots.signal()
+            self?.onLevels?(levels)
+        }
+        ensureRunning()
     }
 
     private func convert(_ data: Data) -> (AVAudioPCMBuffer, [Float])? {
@@ -177,35 +223,39 @@ final class AudioOut: @unchecked Sendable {
               let channels = buffer.floatChannelData else { return nil }
         buffer.frameLength = AVAudioFrameCount(frames)
         let left = channels[0], right = channels[1]
-        var (low, lowMid, mid) = lows
-        var energy: [Float] = [0, 0, 0, 0]
         data.withUnsafeBytes { raw in
             let samples = raw.bindMemory(to: Int16.self)
             let scale: Float = 1 / 32_768
             for i in 0..<frames {
-                let l = Float(Int16(littleEndian: samples[i * 2])) * scale
-                let r = Float(Int16(littleEndian: samples[i * 2 + 1])) * scale
-                left[i] = l
-                right[i] = r
-                let m = (l + r) * 0.5
-                low += 0.021 * (m - low)
-                lowMid += 0.069 * (m - lowMid)
-                mid += 0.248 * (m - mid)
-                let bands = (low, lowMid - low, mid - lowMid, m - mid)
-                energy[0] += bands.0 * bands.0
-                energy[1] += bands.1 * bands.1
-                energy[2] += bands.2 * bands.2
-                energy[3] += bands.3 * bands.3
+                left[i] = Float(Int16(littleEndian: samples[i * 2])) * scale
+                right[i] = Float(Int16(littleEndian: samples[i * 2 + 1])) * scale
             }
         }
+        return (buffer, levels(left, right, frames: frames))
+    }
+
+    private func levels(_ left: UnsafeMutablePointer<Float>, _ right: UnsafeMutablePointer<Float>, frames: Int) -> [Float] {
+        var (low, lowMid, mid) = lows
+        var energy: [Float] = [0, 0, 0, 0]
+        for i in 0..<frames {
+            let m = (left[i] + right[i]) * 0.5
+            low += 0.021 * (m - low)
+            lowMid += 0.069 * (m - lowMid)
+            mid += 0.248 * (m - mid)
+            let bands = (low, lowMid - low, mid - lowMid, m - mid)
+            energy[0] += bands.0 * bands.0
+            energy[1] += bands.1 * bands.1
+            energy[2] += bands.2 * bands.2
+            energy[3] += bands.3 * bands.3
+        }
         lows = (low, lowMid, mid)
-        var levels: [Float] = [0, 0, 0, 0]
+        var result: [Float] = [0, 0, 0, 0]
         for band in 0..<4 {
             let rms = (energy[band] / Float(frames)).squareRoot()
             peaks[band] = max(rms, peaks[band] * 0.996, 0.002)
-            levels[band] = min(rms / peaks[band], 1)
+            result[band] = min(rms / peaks[band], 1)
         }
-        return (buffer, levels)
+        return result
     }
 
     private func fade(to target: Float, over seconds: Double, then done: (() -> Void)?) {

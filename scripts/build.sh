@@ -8,7 +8,13 @@ mkdir -p build
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
+MACOSX_DEPLOYMENT_TARGET=15.0 RUSTUP_TOOLCHAIN=stable cargo build --release --quiet --manifest-path Engine/Cargo.toml
+
 swiftc -O -wmo -target arm64-apple-macos15.0 -swift-version 5 \
+  -import-objc-header Engine/medtner_engine.h \
+  -L Engine/target/release -lmedtner_engine \
+  -framework Security -framework SystemConfiguration -framework CoreFoundation \
+  -Xlinker -dead_strip \
   $(find Sources -name '*.swift') -o "$APP/Contents/MacOS/Medtner"
 strip -x "$APP/Contents/MacOS/Medtner"
 clang -O2 -framework CoreFoundation -mmacosx-version-min=15.0 Hook/hook.c -o "$APP/Contents/MacOS/medtner-hook"

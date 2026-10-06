@@ -1,0 +1,25 @@
+[package]
+name = "medtner_engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+librespot-core = { version = "0.8", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-playback = { version = "0.8", default-features = false, features = ["rustls-tls-native-roots"] }
+librespot-connect = { version = "0.8", default-features = false }
+librespot-oauth = { version = "0.8", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+futures-util = "0.3"
+log = "0.4"
+sha1 = "0.10"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

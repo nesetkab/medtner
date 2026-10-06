@@ -18,6 +18,9 @@ final class Engine {
     }
     var onChange: ((State) -> Void)?
     var onLoginURL: ((URL) -> Void)?
+    var onEvent: ((String) -> Void)?
+    private var builtin = false
+    private var bridge: EngineBridge?
 
     let audio = AudioOut()
     private var process: Process?
@@ -36,7 +39,88 @@ final class Engine {
         FileManager.default.fileExists(atPath: Storage.directory.appendingPathComponent("engine/credentials.json").path)
     }
 
+    var useBuiltin: Bool {
+        !(UserDefaults.standard.bool(forKey: "externalEngine"))
+    }
+
     func start() {
+        guard process == nil, !builtin else { return }
+        if useBuiltin {
+            startBuiltin()
+            return
+        }
+        startExternal()
+    }
+
+    private func startBuiltin() {
+        let cache = Storage.directory.appendingPathComponent("engine", isDirectory: true)
+        let audioCache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Medtner/audio", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: audioCache, withIntermediateDirectories: true)
+        killStale()
+        let volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
+        audio.setVolume(volume)
+
+        let bridge = EngineBridge(audio: audio) { [weak self] name, value in
+            self?.handleBuiltin(name, value)
+        }
+        self.bridge = bridge
+        let context = Unmanaged.passUnretained(bridge).toOpaque()
+        let started = Self.deviceName.withCString { name in
+            cache.path.withCString { system in
+                audioCache.path.withCString { audioPath in
+                    var config = MedtnerEngineConfig(
+                        name: name,
+                        system_cache: system,
+                        audio_cache: audioPath,
+                        audio_cache_limit: 512 * 1024 * 1024,
+                        bitrate: UInt32(UserDefaults.standard.object(forKey: "bitrate") as? Int ?? 320),
+                        normalize: UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true,
+                        initial_volume: UInt32(volume),
+                        audio: { context, samples, count in
+                            guard let context, let samples else { return }
+                            Unmanaged<EngineBridge>.fromOpaque(context).takeUnretainedValue().audio.push(samples, count: count)
+                        },
+                        event: { context, event, value in
+                            guard let context, let event else { return }
+                            let name = String(cString: event)
+                            let bridge = Unmanaged<EngineBridge>.fromOpaque(context).takeUnretainedValue()
+                            DispatchQueue.main.async { bridge.handle(name, value) }
+                        },
+                        context: context
+                    )
+                    return medtner_engine_start(&config)
+                }
+            }
+        }
+        guard started else {
+            self.bridge = nil
+            startExternal()
+            return
+        }
+        builtin = true
+        state = hasCredentials ? .running : .waitingForLogin
+    }
+
+    private func handleBuiltin(_ name: String, _ value: Int64) {
+        switch name {
+        case "needs_login":
+            state = .waitingForLogin
+        case "running":
+            state = .running
+        case "failed":
+            state = .off
+        case "exited":
+            builtin = false
+        case "reconnecting", "sink_started", "sink_stopped":
+            break
+        default:
+            onEvent?("\(name)|\(name == "volume_changed" ? String(value) : "")")
+        }
+    }
+
+    private func startExternal() {
         guard process == nil else { return }
         guard let binary else {
             state = .missing
@@ -128,6 +212,12 @@ final class Engine {
     }
 
     func stop() {
+        if builtin {
+            medtner_engine_stop()
+            builtin = false
+            state = .off
+            return
+        }
         guard let process else { return }
         process.terminationHandler = nil
         process.terminate()
@@ -192,5 +282,20 @@ final class Engine {
             deliverImmediately: true
         )
         return true
+    }
+}
+
+final class EngineBridge: @unchecked Sendable {
+    let audio: AudioOut
+    private let onEvent: @MainActor (String, Int64) -> Void
+
+    init(audio: AudioOut, onEvent: @escaping @MainActor (String, Int64) -> Void) {
+        self.audio = audio
+        self.onEvent = onEvent
+    }
+
+    @MainActor
+    func handle(_ name: String, _ value: Int64) {
+        onEvent(name, value)
     }
 }
