@@ -31,6 +31,7 @@ pub struct MedtnerEngineConfig {
     pub bitrate: u32,
     pub normalize: bool,
     pub initial_volume: u32,
+    pub autoplay: bool,
     pub audio: AudioCallback,
     pub event: EventCallback,
     pub context: *mut c_void,
@@ -88,6 +89,7 @@ struct Settings {
     bitrate: Bitrate,
     normalize: bool,
     initial_volume: u16,
+    autoplay: bool,
 }
 
 static RUNNING: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
@@ -167,6 +169,7 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
         },
         normalize: config.normalize,
         initial_volume: (config.initial_volume.min(100) * u16::MAX as u32 / 100) as u16,
+        autoplay: config.autoplay,
     };
 
     let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
@@ -214,7 +217,11 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
     )
     .ok();
 
-    let session_config = SessionConfig { device_id: device_id(&settings.name), ..SessionConfig::default() };
+    let session_config = SessionConfig {
+        device_id: device_id(&settings.name),
+        autoplay: Some(settings.autoplay),
+        ..SessionConfig::default()
+    };
 
     let credentials = match cache.as_ref().and_then(Cache::credentials) {
         Some(credentials) => credentials,

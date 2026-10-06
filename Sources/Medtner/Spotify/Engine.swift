@@ -81,6 +81,7 @@ final class Engine {
                         bitrate: UInt32(UserDefaults.standard.object(forKey: "bitrate") as? Int ?? 320),
                         normalize: UserDefaults.standard.object(forKey: "normalize") as? Bool ?? true,
                         initial_volume: UInt32(volume),
+                        autoplay: UserDefaults.standard.object(forKey: "autoplay") as? Bool ?? true,
                         audio: { context, samples, count in
                             guard let context, let samples else { return }
                             Unmanaged<EngineBridge>.fromOpaque(context).takeUnretainedValue().audio.push(samples, count: count)

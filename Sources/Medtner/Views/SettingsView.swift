@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Bindable var updater: Updater
     @AppStorage("bitrate") private var bitrate = 320
     @AppStorage("normalize") private var normalize = true
+    @AppStorage("autoplay") private var autoplay = true
     @AppStorage("lyrics") private var showLyrics = true
     @AppStorage("lyricsOffset") private var lyricsOffset = 0
     @AppStorage("autoUpdate") private var autoUpdate = true
@@ -27,6 +28,9 @@ struct SettingsView: View {
                 }
                 row("Even out loudness") {
                     Toggle("", isOn: $normalize).toggleStyle(.switch).labelsHidden()
+                }
+                row("Keep playing similar songs") {
+                    Toggle("", isOn: $autoplay).toggleStyle(.switch).labelsHidden()
                 }
                 if engineDirty {
                     HStack {
@@ -113,6 +117,7 @@ struct SettingsView: View {
         .animation(.snappy(duration: 0.2), value: engineDirty)
         .onChange(of: bitrate) { _, _ in engineDirty = true }
         .onChange(of: normalize) { _, _ in engineDirty = true }
+        .onChange(of: autoplay) { _, _ in engineDirty = true }
         .onChange(of: showLyrics) { _, _ in player.syncLyrics() }
         .onChange(of: lyricsOffset) { _, _ in player.syncLyrics() }
         .onChange(of: launchAtLogin) { _, on in

@@ -13,6 +13,7 @@ typedef struct {
     uint32_t bitrate;
     bool normalize;
     uint32_t initial_volume;
+    bool autoplay;
     MedtnerAudioCallback audio;
     MedtnerEventCallback event;
     void *context;
