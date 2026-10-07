@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
-use librespot_connect::{ConnectConfig, LoadContextOptions, LoadRequest, LoadRequestOptions, Spirc};
+use librespot_connect::{ConnectConfig, LoadRequest, LoadRequestOptions, Spirc};
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::{DeviceType, SessionConfig};
@@ -157,7 +157,7 @@ pub extern "C" fn medtner_engine_radio(track_uri: *const c_char) -> bool {
     let options = LoadRequestOptions {
         start_playing: true,
         seek_to: 0,
-        context_options: Some(LoadContextOptions::Autoplay),
+        context_options: None,
         playing_track: None,
     };
     spirc.activate().is_ok() && spirc.load(LoadRequest::from_context_uri(uri, options)).is_ok()
