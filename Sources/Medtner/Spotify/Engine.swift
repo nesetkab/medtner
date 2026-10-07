@@ -24,6 +24,8 @@ final class Engine {
     var onTrack: ((Track) -> Void)?
     private var builtin = false
     private var bridge: EngineBridge?
+    private var retiring: [EngineBridge] = []
+    private var startWhenRetired = false
 
     let audio = AudioOut()
     private var process: Process?
@@ -48,6 +50,10 @@ final class Engine {
 
     func start() {
         guard process == nil, !builtin else { return }
+        if !retiring.isEmpty {
+            startWhenRetired = true
+            return
+        }
         if useBuiltin {
             startBuiltin()
             return
@@ -65,8 +71,8 @@ final class Engine {
         let volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
         audio.setVolume(volume)
 
-        let bridge = EngineBridge(audio: audio) { [weak self] name, value in
-            self?.handleBuiltin(name, value)
+        let bridge = EngineBridge(audio: audio) { [weak self] source, name, value in
+            self?.handleBuiltin(from: source, name, value)
         }
         self.bridge = bridge
         let context = Unmanaged.passUnretained(bridge).toOpaque()
@@ -121,7 +127,12 @@ final class Engine {
         let cover: String
     }
 
-    private func handleBuiltin(_ name: String, _ value: Int64) {
+    private func handleBuiltin(from source: EngineBridge, _ name: String, _ value: Int64) {
+        if name == "exited" {
+            retire(source)
+            return
+        }
+        guard source === bridge else { return }
         if name.hasPrefix("track_info:") {
             guard let data = name.dropFirst("track_info:".count).data(using: .utf8),
                   let info = try? JSONDecoder().decode(EngineTrack.self, from: data) else { return }
@@ -139,12 +150,23 @@ final class Engine {
             state = .running
         case "failed":
             state = .off
-        case "exited":
-            builtin = false
         case "reconnecting", "sink_started", "sink_stopped":
             break
         default:
             onEvent?("\(name)|\(value)")
+        }
+    }
+
+    private func retire(_ source: EngineBridge) {
+        retiring.removeAll { $0 === source }
+        if source === bridge {
+            bridge = nil
+            builtin = false
+            state = .off
+        }
+        if startWhenRetired, retiring.isEmpty {
+            startWhenRetired = false
+            start()
         }
     }
 
@@ -247,6 +269,8 @@ final class Engine {
     func stop() {
         if builtin {
             medtner_engine_stop()
+            if let bridge { retiring.append(bridge) }
+            bridge = nil
             builtin = false
             state = .off
             return
@@ -320,15 +344,15 @@ final class Engine {
 
 final class EngineBridge: @unchecked Sendable {
     let audio: AudioOut
-    private let onEvent: @MainActor (String, Int64) -> Void
+    private let onEvent: @MainActor (EngineBridge, String, Int64) -> Void
 
-    init(audio: AudioOut, onEvent: @escaping @MainActor (String, Int64) -> Void) {
+    init(audio: AudioOut, onEvent: @escaping @MainActor (EngineBridge, String, Int64) -> Void) {
         self.audio = audio
         self.onEvent = onEvent
     }
 
     @MainActor
     func handle(_ name: String, _ value: Int64) {
-        onEvent(name, value)
+        onEvent(self, name, value)
     }
 }

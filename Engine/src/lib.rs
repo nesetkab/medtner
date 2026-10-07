@@ -1,5 +1,6 @@
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 
 use librespot_connect::{ConnectConfig, LoadContextOptions, LoadRequest, LoadRequestOptions, Spirc};
@@ -17,7 +18,7 @@ use librespot_playback::mixer::{Mixer, MixerConfig, NoOpVolume};
 use librespot_metadata::audio::{AudioItem, UniqueFields};
 use librespot_playback::player::{Player, PlayerEvent};
 use sha1::{Digest, Sha1};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 
 pub type AudioCallback = extern "C" fn(context: *mut c_void, samples: *const f32, count: usize);
 pub type EventCallback = extern "C" fn(context: *mut c_void, event: *const c_char, value: i64);
@@ -88,7 +89,9 @@ struct FileLog {
 
 impl log::Log for FileLog {
     fn enabled(&self, metadata: &log::Metadata) -> bool {
-        metadata.level() <= log::Level::Info && metadata.target().starts_with("librespot")
+        let target = metadata.target();
+        target.starts_with("librespot")
+            && (metadata.level() <= log::Level::Info || target.starts_with("librespot_connect"))
     }
 
     fn log(&self, record: &log::Record) {
@@ -105,18 +108,22 @@ impl log::Log for FileLog {
     fn flush(&self) {}
 }
 
+static LOG: Once = Once::new();
+
 fn start_log(path: &str) {
     if path.is_empty() {
         return;
     }
-    if let Some(parent) = std::path::Path::new(path).parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(file) = std::fs::File::create(path) {
-        if log::set_boxed_logger(Box::new(FileLog { file: Mutex::new(file) })).is_ok() {
-            log::set_max_level(log::LevelFilter::Info);
+    LOG.call_once(|| {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::fs::create_dir_all(parent);
         }
-    }
+        if let Ok(file) = std::fs::File::create(path) {
+            if log::set_boxed_logger(Box::new(FileLog { file: Mutex::new(file) })).is_ok() {
+                log::set_max_level(log::LevelFilter::Debug);
+            }
+        }
+    });
 }
 
 struct Settings {
@@ -131,10 +138,11 @@ struct Settings {
 }
 
 static RUNNING: Mutex<Option<oneshot::Sender<()>>> = Mutex::new(None);
-static COMMANDS: Mutex<Option<mpsc::UnboundedSender<Command>>> = Mutex::new(None);
+static ALIVE: AtomicBool = AtomicBool::new(false);
+static SPIRC: Mutex<Option<Arc<Spirc>>> = Mutex::new(None);
 
-enum Command {
-    Radio(String),
+fn publish(spirc: Option<Arc<Spirc>>) {
+    *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = spirc;
 }
 
 #[no_mangle]
@@ -143,8 +151,16 @@ pub extern "C" fn medtner_engine_radio(track_uri: *const c_char) -> bool {
     if uri.is_empty() {
         return false;
     }
-    let sender = COMMANDS.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    sender.map(|s| s.send(Command::Radio(uri)).is_ok()).unwrap_or(false)
+    let Some(spirc) = SPIRC.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return false;
+    };
+    let options = LoadRequestOptions {
+        start_playing: true,
+        seek_to: 0,
+        context_options: Some(LoadContextOptions::Autoplay),
+        playing_track: None,
+    };
+    spirc.activate().is_ok() && spirc.load(LoadRequest::from_context_uri(uri, options)).is_ok()
 }
 
 const SCOPES: &[&str] = &[
@@ -226,13 +242,11 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
         autoplay: config.autoplay,
     };
 
-    let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
-    if running.is_some() {
+    if ALIVE.swap(true, Ordering::SeqCst) {
         return false;
     }
     let (stop_tx, stop_rx) = oneshot::channel();
-    *running = Some(stop_tx);
-    drop(running);
+    *RUNNING.lock().unwrap_or_else(|e| e.into_inner()) = Some(stop_tx);
 
     let spawned = std::thread::Builder::new().name("medtner.engine".into()).spawn(move || {
         let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -244,14 +258,27 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
             Ok(runtime) => runtime,
             Err(_) => {
                 bridge.emit("failed", 0);
+                finish(bridge);
                 return;
             }
         };
         runtime.block_on(run(settings, bridge, stop_rx));
         runtime.shutdown_timeout(Duration::from_secs(2));
-        bridge.emit("exited", 0);
+        finish(bridge);
     });
-    spawned.is_ok()
+    if spawned.is_err() {
+        RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take();
+        ALIVE.store(false, Ordering::SeqCst);
+        return false;
+    }
+    true
+}
+
+fn finish(bridge: Bridge) {
+    publish(None);
+    RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take();
+    ALIVE.store(false, Ordering::SeqCst);
+    bridge.emit("exited", 0);
 }
 
 #[no_mangle]
@@ -354,16 +381,16 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
         ..ConnectConfig::default()
     };
 
-    let (command_tx, mut commands) = mpsc::unbounded_channel();
-    *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = Some(command_tx);
-
     let mut failures = 0u32;
     loop {
         if session.is_invalid() {
             session = Session::new(session_config.clone(), cache.clone());
             player.set_session(session.clone());
         }
-        let started = Spirc::new(connect_config.clone(), session.clone(), credentials.clone(), player.clone(), mixer.clone()).await;
+        let started = tokio::select! {
+            started = Spirc::new(connect_config.clone(), session.clone(), credentials.clone(), player.clone(), mixer.clone()) => started,
+            _ = &mut stop => return,
+        };
         let (spirc, task) = match started {
             Ok(pair) => pair,
             Err(_) => {
@@ -380,37 +407,27 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
             }
         };
         failures = 0;
+        let spirc = Arc::new(spirc);
+        publish(Some(spirc.clone()));
         bridge.emit("running", 0);
         tokio::pin!(task);
-        loop {
-            tokio::select! {
-                _ = &mut task => {
-                    bridge.emit("reconnecting", 0);
-                    if !session.is_invalid() {
-                        session.shutdown();
-                    }
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                    break;
+        tokio::select! {
+            _ = &mut task => {
+                publish(None);
+                bridge.emit("reconnecting", 0);
+                if !session.is_invalid() {
+                    session.shutdown();
                 }
-                command = commands.recv() => {
-                    if let Some(Command::Radio(uri)) = command {
-                        let options = LoadRequestOptions {
-                            start_playing: true,
-                            seek_to: 0,
-                            context_options: Some(LoadContextOptions::Autoplay),
-                            playing_track: None,
-                        };
-                        if spirc.activate().is_ok() {
-                            let _ = spirc.load(LoadRequest::from_context_uri(uri, options));
-                        }
-                    }
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                    _ = &mut stop => return,
                 }
-                _ = &mut stop => {
-                    *COMMANDS.lock().unwrap_or_else(|e| e.into_inner()) = None;
-                    let _ = spirc.shutdown();
-                    let _ = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
-                    return;
-                }
+            }
+            _ = &mut stop => {
+                publish(None);
+                let _ = spirc.shutdown();
+                let _ = tokio::time::timeout(Duration::from_secs(2), &mut task).await;
+                return;
             }
         }
     }
