@@ -87,11 +87,12 @@ struct API {
         try await get("search", query: ["q": text, "type": "track,album,playlist", "limit": "10"])
     }
 
-    func play(device: String?, context: String? = nil, uris: [String]? = nil, offset: String? = nil) async throws {
+    func play(device: String?, context: String? = nil, uris: [String]? = nil, offset: String? = nil, positionMs: Int? = nil) async throws {
         var body: [String: Any] = [:]
         if let context { body["context_uri"] = context }
         if let uris { body["uris"] = uris }
         if let offset { body["offset"] = ["uri": offset] }
+        if let positionMs { body["position_ms"] = positionMs }
         try await send("PUT", "me/player/play", query: device.map { ["device_id": $0] } ?? [:], body: body.isEmpty ? nil : body)
     }
 

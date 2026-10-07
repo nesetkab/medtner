@@ -454,43 +454,48 @@ final class Player {
         engine.audio.release()
         hold(5)
         let held = holdUntil
+        let resumeURI = track?.uri
+        let resumeContext = contextURI
+        let resumeMs = progressMs
         Task {
             defer { waking = false }
+            let asked = Date()
             var playing = false
-            for attempt in 0..<6 {
-                let active = (try? await api.playback())?.device?.name == Engine.deviceName
-                if active {
-                    try? await api.play(device: Engine.deviceID)
-                } else {
-                    try? await api.transfer(to: Engine.deviceID, play: true)
-                }
-                try? await Task.sleep(for: .milliseconds(1_200))
-                if let state = try? await api.playback(), state.is_playing, state.device?.name == Engine.deviceName {
-                    playing = true
-                    break
-                }
-                if attempt == 1 {
-                    try? await api.transfer(to: Engine.deviceID, play: true)
-                    try? await Task.sleep(for: .milliseconds(1_200))
-                    if let state = try? await api.playback(), state.is_playing {
-                        playing = true
-                        break
+            for attempt in 0..<4 {
+                switch attempt {
+                case 0, 1:
+                    let active = (try? await api.playback())?.device?.name == Engine.deviceName
+                    if active {
+                        try? await api.play(device: Engine.deviceID)
+                    } else {
+                        try? await api.transfer(to: Engine.deviceID, play: true)
                     }
-                }
-                if attempt >= 2, let first = recent.first ?? playlists.first {
+                case 2 where resumeURI != nil:
+                    try? await api.play(device: Engine.deviceID, context: resumeContext,
+                                        uris: resumeContext == nil ? resumeURI.map { [$0] } : nil,
+                                        offset: resumeContext == nil ? nil : resumeURI, positionMs: resumeMs)
+                default:
+                    guard let first = recent.first ?? playlists.first else { continue }
                     try? await api.play(device: Engine.deviceID, context: first.contextURI,
                                         offset: first.contextURI == first.playURI ? nil : first.playURI)
-                    try? await Task.sleep(for: .milliseconds(1_200))
-                    if let state = try? await api.playback(), state.is_playing {
-                        playing = true
-                        break
-                    }
+                }
+                if await engineStarted(since: asked, within: .seconds(3)) {
+                    playing = true
+                    break
                 }
             }
             if !playing { lastError = "Medtner's speaker didn't start. Try again in a moment." }
             await settle(after: .milliseconds(900), releasing: held)
             syncLyrics()
         }
+    }
+
+    private func engineStarted(since asked: Date, within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while enginePlayedAt < asked, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+        return enginePlayedAt >= asked
     }
 
     func next() {
@@ -586,12 +591,9 @@ final class Player {
                 hold(4)
                 let held = holdUntil
                 Task {
-                    let deadline = asked.addingTimeInterval(3.5)
-                    while enginePlayedAt < asked, Date() < deadline {
-                        try? await Task.sleep(for: .milliseconds(250))
-                    }
+                    let started = await engineStarted(since: asked, within: .seconds(3.5))
                     guard holdUntil == held else { return }
-                    if enginePlayedAt >= asked {
+                    if started {
                         flash("Playing radio")
                         await settle(after: .milliseconds(500), releasing: held)
                     } else {
