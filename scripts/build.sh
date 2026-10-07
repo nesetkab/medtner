@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP=build/Medtner.app
-VERSION=${VERSION:-0.1.0}
+VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null | sed "s/^v//" || echo 0.1.0)}
 mkdir -p build
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
