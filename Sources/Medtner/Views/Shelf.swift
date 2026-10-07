@@ -32,7 +32,7 @@ struct ShelfColumn: View {
                     .trackMenu(player.shelfMode == .queue ? tile.playURI : nil, player: player)
                     .transition(.asymmetric(
                         insertion: .offset(x: 130).combined(with: .opacity),
-                        removal: .opacity
+                        removal: .scale(scale: 0.85).combined(with: .opacity)
                     ))
                 }
                 if player.shelf.isEmpty {

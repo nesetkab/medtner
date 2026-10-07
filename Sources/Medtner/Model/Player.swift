@@ -354,6 +354,7 @@ final class Player {
         guard item.uri != track?.uri else { return }
         let full = queuedTracks.first { $0.uri == item.uri }
         queuedTracks.removeAll { $0.uri == item.uri }
+        advanceQueue(past: item.uri)
         adopt(full ?? item)
         durationMs = max(item.duration_ms, 1)
         progressMs = 0
@@ -495,6 +496,7 @@ final class Player {
     func next() {
         if onEngine { engine.audio.interrupt() }
         hold(1.5)
+        if let uri = queuedTracks.first?.uri ?? queue.first?.playURI { advanceQueue(past: uri) }
         if let upcoming = queuedTracks.first {
             queuedTracks.removeFirst()
             withAnimation(.easeOut(duration: 0.5)) { track = upcoming }
@@ -609,6 +611,7 @@ final class Player {
     func playFromQueue(_ index: Int) {
         if onEngine { engine.audio.interrupt() }
         let count = index + 1
+        if index < queue.count { advanceQueue(past: queue[index].playURI) }
         hold(0.6)
         perform { [api] _ in
             for _ in 0..<count { try await api.next() }
@@ -794,10 +797,22 @@ final class Player {
     func loadUpNext() async {
         guard let tracks = try? await api.queue() else { return }
         queuedTracks = Array(tracks.prefix(5))
-        upNext = tracks.prefix(3).enumerated().map { index, track in
-            Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
-                 art: track.artwork.best(near: 120), playURI: track.uri, contextURI: nil)
+        upNext = Self.queueTiles(tracks.prefix(3), art: 120)
+    }
+
+    private static func queueTiles(_ tracks: some Sequence<Track>, art size: Int) -> [Tile] {
+        var seen: [String: Int] = [:]
+        return tracks.map { track in
+            let occurrence = seen[track.uri, default: 0]
+            seen[track.uri] = occurrence + 1
+            return Tile(id: "\(track.uri)#\(occurrence)", title: track.name, subtitle: track.artistLine,
+                        art: track.artwork.best(near: size), playURI: track.uri, contextURI: nil)
         }
+    }
+
+    private func advanceQueue(past uri: String) {
+        if let index = queue.firstIndex(where: { $0.playURI == uri }) { queue.removeSubrange(...index) }
+        if let index = upNext.firstIndex(where: { $0.playURI == uri }) { upNext.removeSubrange(...index) }
     }
 
     func loadShelf() async {
@@ -805,12 +820,7 @@ final class Player {
         switch shelfMode {
         case .queue:
             guard let tracks = try? await api.queue() else { return }
-            var seen = Set<String>()
-            queue = tracks.prefix(20).enumerated().compactMap { index, track in
-                guard seen.insert(track.uri + "\(index)").inserted else { return nil }
-                return Tile(id: "\(index)-\(track.uri)", title: track.name, subtitle: track.artistLine,
-                            art: track.artwork.best(near: 200), playURI: track.uri, contextURI: nil)
-            }
+            queue = Self.queueTiles(tracks.prefix(20), art: 200)
         case .recent:
             guard let items = try? await api.recent() else { return }
             var seen = Set<String>()
