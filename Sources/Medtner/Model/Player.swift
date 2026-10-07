@@ -109,6 +109,7 @@ final class Player {
     @ObservationIgnored private var trustEngineUntil = Date.distantPast
     @ObservationIgnored private var waking = false
     @ObservationIgnored private var engineClockAt = Date.distantPast
+    @ObservationIgnored private var enginePlayedAt = Date.distantPast
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
@@ -267,6 +268,7 @@ final class Player {
         }
         switch event {
         case "playing":
+            enginePlayedAt = Date()
             engine.audio.openGate()
             engine.audio.release()
         case "track_changed":
@@ -395,7 +397,14 @@ final class Player {
         holdUntil = Date().addingTimeInterval(seconds)
     }
 
+    private func settle(after delay: Duration, releasing held: Date) async {
+        try? await Task.sleep(for: delay)
+        if holdUntil == held { holdUntil = .distantPast }
+        await refresh()
+    }
+
     private func perform(_ action: @escaping (String?) async throws -> Void) {
+        let held = holdUntil
         Task {
             do {
                 try await action(nil)
@@ -410,9 +419,7 @@ final class Player {
             } catch {
                 lastError = "\(error)"
             }
-            try? await Task.sleep(for: .milliseconds(350))
-            holdUntil = .distantPast
-            await refresh()
+            await settle(after: .milliseconds(350), releasing: held)
         }
     }
 
@@ -445,6 +452,7 @@ final class Player {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
         engine.audio.release()
         hold(5)
+        let held = holdUntil
         Task {
             defer { waking = false }
             var playing = false
@@ -479,9 +487,7 @@ final class Player {
                 }
             }
             if !playing { lastError = "Medtner's speaker didn't start. Try again in a moment." }
-            try? await Task.sleep(for: .milliseconds(900))
-            holdUntil = .distantPast
-            await refresh()
+            await settle(after: .milliseconds(900), releasing: held)
             syncLyrics()
         }
     }
@@ -572,14 +578,25 @@ final class Player {
         if onEngine {
             engine.audio.interrupt()
             engine.audio.release()
+            let asked = Date()
             if engine.radio(uri) {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { isPlaying = true }
-                hold(2)
-                flash("Playing radio")
+                hold(4)
+                let held = holdUntil
                 Task {
-                    try? await Task.sleep(for: .seconds(2.2))
-                    holdUntil = .distantPast
-                    await refresh()
+                    let deadline = asked.addingTimeInterval(3.5)
+                    while enginePlayedAt < asked, Date() < deadline {
+                        try? await Task.sleep(for: .milliseconds(250))
+                    }
+                    guard holdUntil == held else { return }
+                    if enginePlayedAt >= asked {
+                        flash("Playing radio")
+                        await settle(after: .milliseconds(500), releasing: held)
+                    } else {
+                        hold(0.3)
+                        perform { [api] device in try await api.play(device: device, uris: [uri]) }
+                        flash("Radio keeps going after this song")
+                    }
                 }
                 return
             }
