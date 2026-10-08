@@ -1,4 +1,5 @@
 import AppKit
+import Network
 import Observation
 import SwiftUI
 
@@ -113,6 +114,9 @@ final class Player {
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
+    @ObservationIgnored private let network = NWPathMonitor()
+    @ObservationIgnored private var networkDown = false
+    @ObservationIgnored private var lastRevive = Date.distantPast
 
     var shelf: [Tile] {
         switch shelfMode {
@@ -155,10 +159,44 @@ final class Player {
             let event = note.object as? String ?? ""
             Task { @MainActor in self?.handleEngineEvent(event) }
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.reviveEngine() }
+        }
+        network.pathUpdateHandler = { [weak self] path in
+            let up = path.status == .satisfied
+            Task { @MainActor in self?.networkChanged(up: up) }
+        }
+        network.start(queue: .main)
         Task {
             await resolvePhase()
             if phase == .needsSignIn, ProcessInfo.processInfo.environment["MEDTNER_URL_SINK"] != nil { await signIn() }
         }
+    }
+
+    private func networkChanged(up: Bool) {
+        guard up else {
+            networkDown = true
+            return
+        }
+        guard networkDown else { return }
+        networkDown = false
+        reviveEngine()
+    }
+
+    private func reviveEngine(force: Bool = false) {
+        guard phase == .ready, engine.useBuiltin else { return }
+        guard force || !(onEngine && isPlaying) else { return }
+        guard Date().timeIntervalSince(lastRevive) > 5 else { return }
+        lastRevive = Date()
+        engine.restart()
+    }
+
+    private func engineRunning(within limit: Duration) async -> Bool {
+        let deadline = ContinuousClock.now + limit
+        while engineState != .running, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(250))
+        }
+        return engineState == .running
     }
 
     func resolvePhase() async {
@@ -482,6 +520,14 @@ final class Player {
                 if await engineStarted(since: asked, within: .seconds(3)) {
                     playing = true
                     break
+                }
+            }
+            if !playing {
+                reviveEngine(force: true)
+                if await engineRunning(within: .seconds(15)) {
+                    try? await Task.sleep(for: .seconds(1.5))
+                    try? await api.transfer(to: Engine.deviceID, play: true)
+                    playing = await engineStarted(since: asked, within: .seconds(5))
                 }
             }
             if !playing { lastError = "Medtner's speaker didn't start. Try again in a moment." }
