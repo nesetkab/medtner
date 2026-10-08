@@ -1,20 +1,23 @@
 import SwiftUI
 
-struct PressStyle: ButtonStyle {
+struct PressStyle: PrimitiveButtonStyle {
     var scale: CGFloat = 0.82
     var hover: CGFloat = 1.14
 
     func makeBody(configuration: Configuration) -> some View {
-        PressBody(label: configuration.label, pressed: configuration.isPressed, scale: scale, hover: hover)
+        PressBody(label: configuration.label, trigger: configuration.trigger, scale: scale, hover: hover)
     }
 }
 
 private struct PressBody<Label: View>: View {
     let label: Label
-    let pressed: Bool
+    let trigger: () -> Void
     let scale: CGFloat
     let hover: CGFloat
+    @Environment(\.isEnabled) private var enabled
     @State private var hovering = false
+    @State private var pressed = false
+    @State private var area = CGSize.zero
 
     var body: some View {
         label
@@ -23,9 +26,22 @@ private struct PressBody<Label: View>: View {
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hovering)
             .padding(10)
             .contentShape(Rectangle())
+            .onGeometryChange(for: CGSize.self) { $0.size } action: { area = $0 }
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { pressed = enabled && inside($0.location) }
+                    .onEnded { value in
+                        pressed = false
+                        if enabled, inside(value.location) { trigger() }
+                    }
+            )
             .padding(-10)
             .pointerStyle(.link)
             .onHover { hovering = $0 }
+    }
+
+    private func inside(_ point: CGPoint) -> Bool {
+        CGRect(origin: .zero, size: area).contains(point)
     }
 }
 
