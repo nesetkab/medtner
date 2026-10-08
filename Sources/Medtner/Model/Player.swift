@@ -624,9 +624,19 @@ final class Player {
         perform { [api] _ in try await api.addToQueue(tile.playURI) }
     }
 
-    func transfer(to device: Device) {
-        guard let id = device.id else { return }
-        perform { [api] _ in try await api.transfer(to: id, play: true) }
+    func transfer(to target: Device) {
+        guard let id = target.id, id != device?.id else { return }
+        let toEngine = target.name == Engine.deviceName
+        if toEngine, isPlaying {
+            device = target
+            wakeAndResume()
+            return
+        }
+        if onEngine, !toEngine { engine.audio.hold() }
+        let play = isPlaying
+        device = target
+        hold(2)
+        perform { [api] _ in try await api.transfer(to: id, play: play) }
     }
 
     func loadDevices() async {

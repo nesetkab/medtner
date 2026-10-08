@@ -107,6 +107,7 @@ struct PlayerView: View {
         VStack(alignment: .trailing, spacing: 0) {
             HStack(spacing: 4) {
                 Spacer(minLength: 0)
+                DevicePicker(player: player)
                 LyricsToggle(on: $showLyrics, available: player.lyrics != nil, accent: player.accentColor)
                 Button {
                     searchOpen ? closeSearch() : openSearch()
