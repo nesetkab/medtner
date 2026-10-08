@@ -11,6 +11,10 @@ final class AudioOut: @unchecked Sendable {
     private let control = DispatchQueue(label: "medtner.audio.control", qos: .userInteractive)
     private var held = false
     private var gated = false
+    private var cutPending = false
+    private var discardStaged = false
+    private var draining = false
+    private var lastRendered: CFAbsoluteTime = 0
     private var gateDeadline = Date.distantPast
     private var idleWork: DispatchWorkItem?
     private var generation = 0
@@ -100,44 +104,79 @@ final class AudioOut: @unchecked Sendable {
         lock.lock()
         gated = true
         gateDeadline = Date().addingTimeInterval(seconds)
+        cutPending = true
         lock.unlock()
-        fade(to: 0, over: 0.04) { [weak self] in
-            guard let self else { return }
-            self.node.stop()
-            self.fadeLevel = 1
-            self.applyVolume()
-            self.lock.lock()
-            let isHeld = self.held
-            self.lock.unlock()
-            if !isHeld, self.engine.isRunning { self.node.play() }
+        fade(to: 0, over: 0.04) { [weak self] in self?.cutIfPending() }
+    }
+
+    func react(to event: String) {
+        switch event {
+        case "seeked": seeked()
+        case "track_changed": reopen(discardingStaged: true)
+        case "playing": reopen(discardingStaged: false)
+        default: break
         }
     }
 
-    func flush() {
-        control.async {
-            self.fadeTimer?.cancel()
-            self.node.stop()
-            self.fadeLevel = 1
-            self.applyVolume()
-            self.lock.lock()
-            let isHeld = self.held
-            self.lock.unlock()
-            if !isHeld, self.engine.isRunning { self.node.play() }
-        }
-    }
-
-    func openGate() {
+    var renderedRecently: Bool {
         lock.lock()
-        gated = false
+        defer { lock.unlock() }
+        return CFAbsoluteTimeGetCurrent() - lastRendered < 2
+    }
+
+    func drain() {
+        lock.lock()
+        draining = true
+        lock.unlock()
+        control.sync { node.stop() }
+    }
+
+    func accept() {
+        lock.lock()
+        draining = false
         lock.unlock()
     }
 
-    func seeked() {
+    private func seeked() {
         lock.lock()
         let wasGated = gated
-        gated = false
         lock.unlock()
-        if !wasGated { flush() }
+        if wasGated {
+            reopen(discardingStaged: true)
+        } else {
+            control.sync { cut() }
+            lock.lock()
+            discardStaged = true
+            lock.unlock()
+        }
+    }
+
+    private func reopen(discardingStaged: Bool) {
+        control.sync { cutIfPending() }
+        lock.lock()
+        gated = false
+        if discardingStaged { discardStaged = true }
+        lock.unlock()
+    }
+
+    private func cutIfPending() {
+        lock.lock()
+        let pending = cutPending
+        cutPending = false
+        lock.unlock()
+        if pending { cut() }
+    }
+
+    private func cut() {
+        fadeTimer?.cancel()
+        fadeTimer = nil
+        node.stop()
+        fadeLevel = 1
+        applyVolume()
+        lock.lock()
+        let isHeld = held
+        lock.unlock()
+        if !isHeld, engine.isRunning { node.play() }
     }
 
     func stream(from handle: FileHandle) {
@@ -198,6 +237,12 @@ final class AudioOut: @unchecked Sendable {
     }
 
     func push(_ samples: UnsafePointer<Float>, count: Int) {
+        lock.lock()
+        if discardStaged {
+            discardStaged = false
+            stagingFill = 0
+        }
+        lock.unlock()
         let capacity = framesPerChunk * 2
         var offset = 0
         while offset < count {
@@ -215,10 +260,14 @@ final class AudioOut: @unchecked Sendable {
     }
 
     private func emitStaged() {
+        lock.lock()
+        let wasDraining = draining
+        lock.unlock()
+        guard !wasDraining else { return }
         slots.wait()
         lock.lock()
         if gated, Date() > gateDeadline { gated = false }
-        let dropping = gated
+        let dropping = gated || draining
         lock.unlock()
         let frames = framesPerChunk
         guard !dropping, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
@@ -239,8 +288,12 @@ final class AudioOut: @unchecked Sendable {
 
     private func schedule(_ buffer: AVAudioPCMBuffer, levels: [Float]) {
         node.scheduleBuffer(buffer, completionCallbackType: .dataRendered) { [weak self] _ in
-            self?.slots.signal()
-            self?.broadcast(levels)
+            guard let self else { return }
+            self.lock.lock()
+            self.lastRendered = CFAbsoluteTimeGetCurrent()
+            self.lock.unlock()
+            self.slots.signal()
+            self.broadcast(levels)
         }
         ensureRunning()
     }

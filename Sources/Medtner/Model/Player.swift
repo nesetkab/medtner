@@ -160,7 +160,7 @@ final class Player {
             Task { @MainActor in self?.handleEngineEvent(event) }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.reviveEngine() }
+            Task { @MainActor in self?.woke() }
         }
         network.pathUpdateHandler = { [weak self] path in
             let up = path.status == .satisfied
@@ -183,20 +183,28 @@ final class Player {
         reviveEngine()
     }
 
+    private func woke() {
+        guard network.currentPath.status == .satisfied else {
+            networkDown = true
+            return
+        }
+        reviveEngine()
+    }
+
     private func reviveEngine(force: Bool = false) {
         guard phase == .ready, engine.useBuiltin else { return }
-        guard force || !(onEngine && isPlaying) else { return }
+        guard force || !(onEngine && isPlaying && engine.audio.renderedRecently) else { return }
         guard Date().timeIntervalSince(lastRevive) > 5 else { return }
         lastRevive = Date()
         engine.restart()
     }
 
-    private func engineRunning(within limit: Duration) async -> Bool {
+    private func engineConnected(since revived: Date, within limit: Duration) async -> Bool {
         let deadline = ContinuousClock.now + limit
-        while engineState != .running, ContinuousClock.now < deadline {
+        while engine.connectedAt <= revived, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(250))
         }
-        return engineState == .running
+        return engine.connectedAt > revived
     }
 
     func resolvePhase() async {
@@ -306,17 +314,8 @@ final class Player {
             syncLyrics()
         }
         engineSeen[event] = Date()
-        switch event {
-        case "playing":
-            if !engine.useBuiltin { engine.audio.openGate() }
-            engine.audio.release()
-        case "track_changed":
-            if !engine.useBuiltin { engine.audio.openGate() }
-        case "seeked":
-            if !engine.useBuiltin { engine.audio.seeked() }
-        default:
-            break
-        }
+        if event == "playing" { engine.audio.release() }
+        if !engine.useBuiltin { engine.audio.react(to: event) }
         switch event {
         case "track_changed", "playing", "paused", "seeked", "stopped", "session_connected", "shuffle_changed":
             poke()
@@ -501,6 +500,7 @@ final class Player {
             let asked = Date()
             var playing = false
             for attempt in 0..<4 {
+                if holdUntil != held { break }
                 switch attempt {
                 case 0, 1:
                     let active = (try? await api.playback())?.device?.name == Engine.deviceName
@@ -523,15 +523,18 @@ final class Player {
                     break
                 }
             }
-            if !playing {
+            if !playing, holdUntil == held {
                 reviveEngine(force: true)
-                if await engineRunning(within: .seconds(15)) {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    try? await api.transfer(to: Engine.deviceID, play: true)
-                    playing = await engineStarted(since: asked, within: .seconds(5))
+                let revived = lastRevive
+                if await engineConnected(since: revived, within: .seconds(15)) {
+                    try? await Task.sleep(for: .seconds(1))
+                    if holdUntil == held {
+                        try? await api.transfer(to: Engine.deviceID, play: true)
+                        playing = await engineStarted(since: asked, within: .seconds(5))
+                    }
                 }
             }
-            if !playing { lastError = "Medtner's speaker didn't start. Try again in a moment." }
+            if !playing, holdUntil == held { lastError = "Medtner's speaker didn't start. Try again in a moment." }
             await settle(after: .milliseconds(900), releasing: held)
             syncLyrics()
         }

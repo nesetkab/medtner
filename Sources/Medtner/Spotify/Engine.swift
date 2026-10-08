@@ -19,6 +19,7 @@ final class Engine {
         didSet { onChange?(state) }
     }
     var onChange: ((State) -> Void)?
+    private(set) var connectedAt = Date.distantPast
     var onLoginURL: ((URL) -> Void)?
     var onEvent: ((String) -> Void)?
     var onTrack: ((Track) -> Void)?
@@ -68,6 +69,7 @@ final class Engine {
         try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
         try? FileManager.default.createDirectory(at: audioCache, withIntermediateDirectories: true)
         killStale()
+        audio.accept()
         let volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
         audio.setVolume(volume)
 
@@ -149,6 +151,7 @@ final class Engine {
         case "needs_login":
             state = .waitingForLogin
         case "running":
+            connectedAt = Date()
             state = .running
         case "failed":
             state = .off
@@ -274,6 +277,7 @@ final class Engine {
 
     func stop() {
         if builtin {
+            audio.drain()
             medtner_engine_stop()
             if let bridge { retiring.append(bridge) }
             bridge = nil
@@ -358,11 +362,7 @@ final class EngineBridge: @unchecked Sendable {
     }
 
     func react(to name: String) {
-        switch name {
-        case "seeked": audio.seeked()
-        case "track_changed", "playing": audio.openGate()
-        default: break
-        }
+        audio.react(to: name)
     }
 
     @MainActor
