@@ -70,7 +70,7 @@ struct LyricRow: View {
             .lineSpacing(2)
             .foregroundStyle(.white)
             .fixedSize(horizontal: false, vertical: true)
-            .drawingGroup()
+            .rasterized(synced)
             .opacity(opacity)
             .scaleEffect(place == .current ? 1 : 0.95, anchor: .leading)
             .blur(radius: place == .current || place == .plain || hovering ? 0 : 0.6)
@@ -106,7 +106,7 @@ struct LyricsStrip: View {
                 .tracking(-size * 0.03)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-                .drawingGroup()
+                .rasterized()
                 .opacity(current ? 1 : line.id < index ? 0.22 : 0.34)
                 .scaleEffect(current ? 1 : 0.9, anchor: .leading)
                 .blur(radius: current ? 0 : 1.5)
@@ -174,5 +174,16 @@ struct LyricsToggle: View {
         }
         .buttonStyle(PressStyle())
         .help(available ? (on ? "Hide lyrics" : "Show lyrics") : "No lyrics for this song")
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func rasterized(_ enabled: Bool = true) -> some View {
+        if enabled {
+            padding(8).drawingGroup().padding(-8)
+        } else {
+            self
+        }
     }
 }
