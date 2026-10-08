@@ -124,7 +124,8 @@ impl ConnectState {
             Some(track) => track.clone(),
         };
 
-        let context_ty = if self.current_track(|t| t.is_from_autoplay()) {
+        let from_autoplay = self.current_track(|t| t.is_from_autoplay() || t.is_autoplay());
+        let context_ty = if from_autoplay && self.get_context(ContextType::Autoplay).is_ok() {
             ContextType::Autoplay
         } else {
             ContextType::Default
