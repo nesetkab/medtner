@@ -6,6 +6,7 @@ final class RailLayerView: NSView {
     var stopListening: (() -> Void)?
     private let host = CALayer()
     private let core = CALayer()
+    private let reveal = CAGradientLayer()
     private let waves = (0..<3).map { _ in CAShapeLayer() }
     private let knob = CALayer()
     private let bubble = CALayer()
@@ -25,8 +26,8 @@ final class RailLayerView: NSView {
 
     private static let knobSize = CGSize(width: 22, height: 4)
     private static let gap: CGFloat = 5
-    private static let shapes: [(amp: CGFloat, k: CGFloat, phase: CGFloat, period: Double)] = [
-        (11, 9, 0.3, 1.9), (8.5, 13, 1.9, 2.5), (6.5, 17, 3.1, 3.3),
+    private static let shapes: [(amp: CGFloat, length: CGFloat, phase: CGFloat, period: Double)] = [
+        (7.5, 120, 0.3, 1.9), (5.5, 86, 1.9, 2.5), (4.5, 64, 3.1, 3.3),
     ]
     private static let restScale: CGFloat = 0.3
 
@@ -46,6 +47,9 @@ final class RailLayerView: NSView {
         }
         core.backgroundColor = NSColor(white: 1, alpha: 0.8).cgColor
         host.addSublayer(core)
+        reveal.colors = [NSColor(white: 1, alpha: 0.4).cgColor, NSColor.white.cgColor]
+        reveal.anchorPoint = CGPoint(x: 0.5, y: 0)
+        host.mask = reveal
         layer?.addSublayer(host)
         knob.backgroundColor = NSColor.white.cgColor
         knob.cornerRadius = Self.knobSize.height / 2
@@ -166,13 +170,13 @@ final class RailLayerView: NSView {
         if !grabbed {
             grabbed = true
             knob.removeAnimation(forKey: "progress")
-            host.removeAnimation(forKey: "progress")
+            reveal.removeAnimation(forKey: "progress")
         }
         let y = centerY(for: min(max(target, 0), 1))
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         knob.position = CGPoint(x: bounds.midX, y: y)
-        host.transform = CATransform3DMakeScale(1, stretch(at: y), 1)
+        reveal.bounds.size.height = revealed(at: y)
         CATransaction.commit()
     }
 
@@ -205,19 +209,18 @@ final class RailLayerView: NSView {
         }
     }
 
-    private func wavePath(shape: (amp: CGFloat, k: CGFloat, phase: CGFloat, period: Double), phase: CGFloat) -> CGPath {
+    private func wavePath(shape: (amp: CGFloat, length: CGFloat, phase: CGFloat, period: Double), phase: CGFloat) -> CGPath {
         let height = bounds.height
         let mid = bounds.midX
-        let steps = 140
+        let steps = Int(height / 2)
         var left: [CGPoint] = []
         var right: [CGPoint] = []
         for i in 0...steps {
-            let u = CGFloat(i) / CGFloat(steps)
-            let rise = 0.15 + 0.85 * pow(u, 2.2)
-            let envelope = rise * pow(min(1, (1 - u) * 9), 0.7) * min(1, u * 30)
-            let d = shape.amp * envelope * abs(sin(shape.k * (u * 4 - 2) + phase))
-            left.append(CGPoint(x: mid - d, y: u * height))
-            right.append(CGPoint(x: mid + d, y: u * height))
+            let y = height * CGFloat(i) / CGFloat(steps)
+            let envelope = min(1, y / 48)
+            let d = shape.amp * envelope * abs(sin(2 * .pi * y / shape.length + phase))
+            left.append(CGPoint(x: mid - d, y: y))
+            right.append(CGPoint(x: mid + d, y: y))
         }
         let path = CGMutablePath()
         path.addLines(between: left + right.reversed())
@@ -235,8 +238,8 @@ final class RailLayerView: NSView {
         slot / 2 + (bounds.height - slot) * CGFloat(fraction)
     }
 
-    private func stretch(at y: CGFloat) -> CGFloat {
-        max(0.0001, (y - Self.gap) / max(bounds.height, 1))
+    private func revealed(at y: CGFloat) -> CGFloat {
+        max(0, y - Self.gap)
     }
 
     override func layout() {
@@ -247,6 +250,8 @@ final class RailLayerView: NSView {
             CATransaction.setDisableActions(true)
             host.bounds = bounds
             host.position = CGPoint(x: bounds.midX, y: 0)
+            reveal.bounds = CGRect(x: 0, y: 0, width: bounds.width + 80, height: reveal.bounds.height)
+            reveal.position = CGPoint(x: bounds.midX, y: 0)
             core.frame = CGRect(x: bounds.midX - 0.4, y: 0, width: 0.8, height: bounds.height)
             for (i, wave) in waves.enumerated() {
                 wave.bounds = bounds
@@ -272,9 +277,9 @@ final class RailLayerView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         knob.removeAnimation(forKey: "progress")
-        host.removeAnimation(forKey: "progress")
+        reveal.removeAnimation(forKey: "progress")
         knob.position = CGPoint(x: bounds.midX, y: start)
-        host.transform = CATransform3DMakeScale(1, stretch(at: start), 1)
+        reveal.bounds.size.height = revealed(at: start)
         CATransaction.commit()
 
         guard playing, remaining > 0.05 else { return }
@@ -286,13 +291,13 @@ final class RailLayerView: NSView {
         move.isRemovedOnCompletion = false
         knob.add(move, forKey: "progress")
 
-        let grow = CABasicAnimation(keyPath: "transform.scale.y")
-        grow.fromValue = stretch(at: start)
-        grow.toValue = stretch(at: end)
+        let grow = CABasicAnimation(keyPath: "bounds.size.height")
+        grow.fromValue = revealed(at: start)
+        grow.toValue = revealed(at: end)
         grow.duration = remaining
         grow.fillMode = .forwards
         grow.isRemovedOnCompletion = false
-        host.add(grow, forKey: "progress")
+        reveal.add(grow, forKey: "progress")
     }
 }
 
