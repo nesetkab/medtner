@@ -260,6 +260,10 @@ final class Engine {
         return trackURI.withCString { medtner_engine_radio($0) }
     }
 
+    func next() -> Bool { builtin && medtner_engine_next() }
+    func previous() -> Bool { builtin && medtner_engine_previous() }
+    func seek(_ ms: Int) -> Bool { builtin && medtner_engine_seek(UInt32(max(ms, 0))) }
+
     func restart() {
         stop()
         restarts = 0

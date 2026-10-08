@@ -109,7 +109,7 @@ final class Player {
     @ObservationIgnored private var trustEngineUntil = Date.distantPast
     @ObservationIgnored private var waking = false
     @ObservationIgnored private var engineClockAt = Date.distantPast
-    @ObservationIgnored private var enginePlayedAt = Date.distantPast
+    @ObservationIgnored private var engineSeen: [String: Date] = [:]
     @ObservationIgnored private var lyricsTask: Task<Void, Never>?
     @ObservationIgnored private var lyricsClock: Task<Void, Never>?
     @ObservationIgnored private var userID: String?
@@ -266,9 +266,9 @@ final class Player {
             if event != "seeked" { isPlaying = event == "playing" }
             syncLyrics()
         }
+        engineSeen[event] = Date()
         switch event {
         case "playing":
-            enginePlayedAt = Date()
             engine.audio.openGate()
             engine.audio.release()
         case "track_changed":
@@ -491,15 +491,43 @@ final class Player {
     }
 
     private func engineStarted(since asked: Date, within limit: Duration) async -> Bool {
+        await engineSaw(["playing"], since: asked, within: limit)
+    }
+
+    private func engineSaw(_ events: Set<String>, since asked: Date, within limit: Duration) async -> Bool {
         let deadline = ContinuousClock.now + limit
-        while enginePlayedAt < asked, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(200))
+        func seen() -> Bool { events.contains { (engineSeen[$0] ?? .distantPast) >= asked } }
+        while !seen(), ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
         }
-        return enginePlayedAt >= asked
+        return seen()
+    }
+
+    private var engineInControl: Bool { device?.name == Engine.deviceName && engine.useBuiltin }
+
+    private func command(_ local: () -> Bool, confirmedBy events: Set<String>,
+                         fallback: @escaping @Sendable (API) async throws -> Void) {
+        guard engineInControl else {
+            if onEngine { engine.audio.interrupt() }
+            perform { [api] _ in try await fallback(api) }
+            return
+        }
+        engine.audio.interrupt(for: 1.2)
+        let held = holdUntil
+        let asked = Date()
+        guard local() else {
+            perform { [api] _ in try await fallback(api) }
+            return
+        }
+        Task {
+            if await !engineSaw(events, since: asked, within: .seconds(1)) {
+                try? await fallback(api)
+            }
+            await settle(after: .milliseconds(350), releasing: held)
+        }
     }
 
     func next() {
-        if onEngine { engine.audio.interrupt() }
         hold(1.5)
         if let uri = queuedTracks.first?.uri ?? queue.first?.playURI { advanceQueue(past: uri) }
         if let upcoming = queuedTracks.first {
@@ -512,24 +540,22 @@ final class Player {
             loadArtwork()
             loadLyrics()
         }
-        perform { [api] _ in try await api.next() }
+        command(engine.next, confirmedBy: ["track_changed"]) { try await $0.next() }
     }
 
     func previous() {
-        if onEngine { engine.audio.interrupt() }
         hold(0.6)
-        perform { [api] _ in try await api.previous() }
+        command(engine.previous, confirmedBy: ["track_changed", "seeked", "stopped"]) { try await $0.previous() }
     }
 
     func seek(to fraction: Double) {
-        if onEngine { engine.audio.interrupt() }
         let ms = Int(Double(durationMs) * min(max(fraction, 0), 1))
         progressMs = ms
         progressStamp = Date()
         progressEpoch &+= 1
         syncLyrics()
         hold()
-        perform { [api] _ in try await api.seek(ms) }
+        command({ engine.seek(ms) }, confirmedBy: ["seeked"]) { try await $0.seek(ms) }
     }
 
     func setVolume(_ value: Int) {

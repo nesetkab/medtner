@@ -7,6 +7,7 @@ use librespot_connect::{ConnectConfig, LoadRequest, LoadRequestOptions, Spirc};
 use librespot_core::authentication::Credentials;
 use librespot_core::cache::Cache;
 use librespot_core::config::{DeviceType, SessionConfig};
+use librespot_core::Error;
 use librespot_core::session::Session;
 use librespot_oauth::OAuthClientBuilder;
 use librespot_playback::audio_backend::{Sink, SinkResult};
@@ -145,22 +146,44 @@ fn publish(spirc: Option<Arc<Spirc>>) {
     *SPIRC.lock().unwrap_or_else(|e| e.into_inner()) = spirc;
 }
 
+fn with_spirc(action: impl FnOnce(&Spirc) -> Result<(), Error>) -> bool {
+    let Some(spirc) = SPIRC.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
+        return false;
+    };
+    action(&spirc).is_ok()
+}
+
 #[no_mangle]
 pub extern "C" fn medtner_engine_radio(track_uri: *const c_char) -> bool {
     let uri = string(track_uri);
     if uri.is_empty() {
         return false;
     }
-    let Some(spirc) = SPIRC.lock().unwrap_or_else(|e| e.into_inner()).clone() else {
-        return false;
-    };
     let options = LoadRequestOptions {
         start_playing: true,
         seek_to: 0,
         context_options: None,
         playing_track: None,
     };
-    spirc.activate().is_ok() && spirc.load(LoadRequest::from_context_uri(uri, options)).is_ok()
+    with_spirc(|spirc| {
+        spirc.activate()?;
+        spirc.load(LoadRequest::from_context_uri(uri, options))
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn medtner_engine_next() -> bool {
+    with_spirc(Spirc::next)
+}
+
+#[no_mangle]
+pub extern "C" fn medtner_engine_previous() -> bool {
+    with_spirc(Spirc::prev)
+}
+
+#[no_mangle]
+pub extern "C" fn medtner_engine_seek(position_ms: u32) -> bool {
+    with_spirc(|spirc| spirc.set_position_ms(position_ms))
 }
 
 const SCOPES: &[&str] = &[

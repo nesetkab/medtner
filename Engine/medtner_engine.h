@@ -23,3 +23,6 @@ typedef struct {
 bool medtner_engine_start(const MedtnerEngineConfig *config);
 void medtner_engine_stop(void);
 bool medtner_engine_radio(const char *track_uri);
+bool medtner_engine_next(void);
+bool medtner_engine_previous(void);
+bool medtner_engine_seek(uint32_t position_ms);
