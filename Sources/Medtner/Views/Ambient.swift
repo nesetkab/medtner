@@ -3,7 +3,6 @@ import QuartzCore
 import SwiftUI
 
 final class BlobView: NSView {
-    var stopListening: (() -> Void)?
     private let container = CALayer()
     private let blobs: [CAGradientLayer] = (0..<5).map { _ in CAGradientLayer() }
     private var smoothed: [CGFloat] = [0, 0, 0, 0, 0]
@@ -186,16 +185,10 @@ struct AmbientBlobs: NSViewRepresentable {
         let view = BlobView(frame: .zero)
         view.spread = spread
         view.glow = glow
-        let audio = player.engine.audio
-        let token = audio.observeLevels { [weak view] levels in
+        player.engine.audio.onLevels = { [weak view] levels in
             DispatchQueue.main.async { view?.receive(levels) }
         }
-        view.stopListening = { [weak audio] in audio?.stopObservingLevels(token) }
         return view
-    }
-
-    static func dismantleNSView(_ view: BlobView, coordinator: ()) {
-        view.stopListening?()
     }
 
     func updateNSView(_ view: BlobView, context: Context) {

@@ -29,28 +29,7 @@ final class AudioOut: @unchecked Sendable {
     private var activity: NSObjectProtocol?
     private var staging = [Float](repeating: 0, count: 4_096)
     private var stagingFill = 0
-    private var levelListeners: [UUID: ([Float]) -> Void] = [:]
-
-    func observeLevels(_ handler: @escaping ([Float]) -> Void) -> UUID {
-        let token = UUID()
-        lock.lock()
-        levelListeners[token] = handler
-        lock.unlock()
-        return token
-    }
-
-    func stopObservingLevels(_ token: UUID) {
-        lock.lock()
-        levelListeners[token] = nil
-        lock.unlock()
-    }
-
-    private func broadcast(_ levels: [Float]) {
-        lock.lock()
-        let handlers = Array(levelListeners.values)
-        lock.unlock()
-        for handler in handlers { handler(levels) }
-    }
+    var onLevels: (([Float]) -> Void)?
 
     init() {
         engine.attach(node)
@@ -240,7 +219,7 @@ final class AudioOut: @unchecked Sendable {
     private func schedule(_ buffer: AVAudioPCMBuffer, levels: [Float]) {
         node.scheduleBuffer(buffer, completionCallbackType: .dataRendered) { [weak self] _ in
             self?.slots.signal()
-            self?.broadcast(levels)
+            self?.onLevels?(levels)
         }
         ensureRunning()
     }
