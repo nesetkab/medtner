@@ -297,9 +297,10 @@ final class Player {
         }
         if ["playing", "paused", "seeked"].contains(event), engine.useBuiltin,
            let ms = Int(parts.count > 1 ? parts[1] : "") {
-            engineClockAt = Date()
+            let happened = parts.count > 2 ? Double(parts[2]).map(Date.init(timeIntervalSince1970:)) ?? Date() : Date()
+            engineClockAt = happened
             progressMs = ms
-            progressStamp = Date()
+            progressStamp = happened
             progressEpoch &+= 1
             if event != "seeked" { isPlaying = event == "playing" }
             syncLyrics()
@@ -307,12 +308,12 @@ final class Player {
         engineSeen[event] = Date()
         switch event {
         case "playing":
-            engine.audio.openGate()
+            if !engine.useBuiltin { engine.audio.openGate() }
             engine.audio.release()
         case "track_changed":
-            engine.audio.openGate()
+            if !engine.useBuiltin { engine.audio.openGate() }
         case "seeked":
-            engine.audio.seeked()
+            if !engine.useBuiltin { engine.audio.seeked() }
         default:
             break
         }

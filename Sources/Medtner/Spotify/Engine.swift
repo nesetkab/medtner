@@ -71,8 +71,8 @@ final class Engine {
         let volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
         audio.setVolume(volume)
 
-        let bridge = EngineBridge(audio: audio) { [weak self] source, name, value in
-            self?.handleBuiltin(from: source, name, value)
+        let bridge = EngineBridge(audio: audio) { [weak self] source, name, value, at in
+            self?.handleBuiltin(from: source, name, value, at: at)
         }
         self.bridge = bridge
         let context = Unmanaged.passUnretained(bridge).toOpaque()
@@ -100,7 +100,9 @@ final class Engine {
                             guard let context, let event else { return }
                             let name = String(cString: event)
                             let bridge = Unmanaged<EngineBridge>.fromOpaque(context).takeUnretainedValue()
-                            DispatchQueue.main.async { bridge.handle(name, value) }
+                            let at = Date().timeIntervalSince1970
+                            bridge.react(to: name)
+                            DispatchQueue.main.async { bridge.handle(name, value, at: at) }
                         },
                         context: context
                     )
@@ -127,7 +129,7 @@ final class Engine {
         let cover: String
     }
 
-    private func handleBuiltin(from source: EngineBridge, _ name: String, _ value: Int64) {
+    private func handleBuiltin(from source: EngineBridge, _ name: String, _ value: Int64, at: TimeInterval) {
         if name == "exited" {
             retire(source)
             return
@@ -153,7 +155,7 @@ final class Engine {
         case "reconnecting", "sink_started", "sink_stopped":
             break
         default:
-            onEvent?("\(name)|\(value)")
+            onEvent?("\(name)|\(value)|\(at)")
         }
     }
 
@@ -348,15 +350,23 @@ final class Engine {
 
 final class EngineBridge: @unchecked Sendable {
     let audio: AudioOut
-    private let onEvent: @MainActor (EngineBridge, String, Int64) -> Void
+    private let onEvent: @MainActor (EngineBridge, String, Int64, TimeInterval) -> Void
 
-    init(audio: AudioOut, onEvent: @escaping @MainActor (EngineBridge, String, Int64) -> Void) {
+    init(audio: AudioOut, onEvent: @escaping @MainActor (EngineBridge, String, Int64, TimeInterval) -> Void) {
         self.audio = audio
         self.onEvent = onEvent
     }
 
+    func react(to name: String) {
+        switch name {
+        case "seeked": audio.seeked()
+        case "track_changed", "playing": audio.openGate()
+        default: break
+        }
+    }
+
     @MainActor
-    func handle(_ name: String, _ value: Int64) {
-        onEvent(self, name, value)
+    func handle(_ name: String, _ value: Int64, at: TimeInterval) {
+        onEvent(self, name, value, at)
     }
 }
