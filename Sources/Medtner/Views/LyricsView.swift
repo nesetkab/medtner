@@ -68,8 +68,10 @@ struct LyricRow: View {
             .font(.system(size: synced ? 20 : 15, weight: synced ? .bold : .medium))
             .tracking(synced ? -0.5 : -0.2)
             .lineSpacing(2)
-            .foregroundStyle(color)
+            .foregroundStyle(.white)
             .fixedSize(horizontal: false, vertical: true)
+            .drawingGroup()
+            .opacity(opacity)
             .scaleEffect(place == .current ? 1 : 0.95, anchor: .leading)
             .blur(radius: place == .current || place == .plain || hovering ? 0 : 0.6)
             .animation(.spring(response: 0.75, dampingFraction: 0.9), value: place)
@@ -79,13 +81,13 @@ struct LyricRow: View {
             .onTapGesture { if synced { seek() } }
     }
 
-    private var color: Color {
-        if hovering && place != .current { return .white.opacity(0.75) }
+    private var opacity: Double {
+        if hovering && place != .current { return 0.75 }
         switch place {
-        case .current: return .white
-        case .past: return .white.opacity(0.26)
-        case .upcoming: return .white.opacity(0.4)
-        case .plain: return .white.opacity(0.75)
+        case .current: return 1
+        case .past: return 0.26
+        case .upcoming: return 0.4
+        case .plain: return 0.75
         }
     }
 }
@@ -102,8 +104,10 @@ struct LyricsStrip: View {
             Text(line.text.isEmpty ? "· · ·" : line.text)
                 .font(.system(size: size, weight: .bold))
                 .tracking(-size * 0.03)
+                .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(.white.opacity(current ? 1 : line.id < index ? 0.22 : 0.34))
+                .drawingGroup()
+                .opacity(current ? 1 : line.id < index ? 0.22 : 0.34)
                 .scaleEffect(current ? 1 : 0.9, anchor: .leading)
                 .blur(radius: current ? 0 : 1.5)
         }
