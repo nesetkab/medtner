@@ -25,7 +25,7 @@ final class RailLayerView: NSView {
     private var smoothed: [CGFloat] = [0, 0, 0]
 
     private static let knobSize = CGSize(width: 22, height: 4)
-    private static let gap: CGFloat = 5
+    private static let gap: CGFloat = 0
     private static let shapes: [(amp: CGFloat, length: CGFloat, phase: CGFloat, period: Double)] = [
         (7.5, 120, 0.3, 1.9), (5.5, 86, 1.9, 2.5), (4.5, 64, 3.1, 3.3),
     ]
