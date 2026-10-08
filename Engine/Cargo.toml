@@ -24,3 +24,6 @@ lto = "thin"
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[patch.crates-io]
+librespot-connect = { path = "vendor/librespot-connect" }
