@@ -1,5 +1,5 @@
 use crate::{
-    LoadContextOptions, LoadRequestOptions, PlayContext,
+    LoadContextOptions, LoadRequestOptions, Options, PlayContext,
     context_resolver::{ContextAction, ContextResolver, ResolveContext},
     core::{
         Error, Session, SpotifyUri,
@@ -140,6 +140,7 @@ const CONTEXT_FETCH_THRESHOLD: usize = 2;
 const VOLUME_UPDATE_DELAY: Duration = Duration::from_millis(500);
 // to reduce updates to remote, we group some request by waiting for a set amount of time
 const UPDATE_STATE_DELAY: Duration = Duration::from_millis(200);
+const SESSION_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 /// The spotify connect handle
 pub struct Spirc {
@@ -159,7 +160,7 @@ impl Spirc {
         credentials: Credentials,
         player: Arc<Player>,
         mixer: Arc<dyn Mixer>,
-    ) -> Result<(Spirc, impl Future<Output = ()>), Error> {
+    ) -> Result<(Spirc, impl Future<Output = Option<LoadRequest>>), Error> {
         fn extract_connection_id(msg: Message) -> Result<String, Error> {
             let connection_id = msg
                 .headers
@@ -413,7 +414,7 @@ impl Spirc {
 }
 
 impl SpircTask {
-    async fn run(mut self) {
+    async fn run(mut self) -> Option<LoadRequest> {
         // simplify unwrapping of received item or parsed result
         macro_rules! unwrap {
             ( $next:expr, |$some:ident| $use_some:expr ) => {
@@ -435,7 +436,7 @@ impl SpircTask {
 
         if let Err(why) = self.session.dealer().start().await {
             error!("starting dealer failed: {why}");
-            return;
+            return None;
         }
 
         while !self.session.is_invalid() && !self.shutdown {
@@ -560,12 +561,15 @@ impl SpircTask {
                         }
                     }
                 },
+                _ = sleep(SESSION_CHECK_INTERVAL) => {},
                 else => break
             }
         }
 
+        let mut resume = None;
         if !self.shutdown && self.connect_state.is_active() {
             warn!("unexpected shutdown");
+            resume = self.resume_request();
             if let Err(why) = self.handle_disconnect().await {
                 error!("error during disconnecting: {why}")
             }
@@ -577,6 +581,30 @@ impl SpircTask {
         };
 
         self.session.dealer().close().await;
+        resume
+    }
+
+    fn resume_request(&mut self) -> Option<LoadRequest> {
+        let track = self.connect_state.player().track.as_ref()?.clone();
+        if track.uri.is_empty() {
+            return None;
+        }
+        let options = LoadRequestOptions {
+            start_playing: self.connect_state.is_playing(),
+            seek_to: self.position(),
+            context_options: Some(LoadContextOptions::Options(Options {
+                shuffle: self.connect_state.shuffling_context(),
+                repeat: self.connect_state.repeat_context(),
+                repeat_track: self.connect_state.repeat_track(),
+            })),
+            playing_track: Some(PlayingTrack::Uri(track.uri.clone())),
+        };
+        let context = self.connect_state.context_uri();
+        Some(if track.is_context() && !context.is_empty() {
+            LoadRequest::from_context_uri(context.clone(), options)
+        } else {
+            LoadRequest::from_tracks(vec![track.uri], options)
+        })
     }
 
     fn handle_next_context(&mut self, next_context: Result<Context, Error>) -> bool {

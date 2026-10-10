@@ -1,7 +1,7 @@
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use librespot_connect::{ConnectConfig, LoadRequest, LoadRequestOptions, Spirc};
 use librespot_core::authentication::Credentials;
@@ -312,6 +312,12 @@ pub extern "C" fn medtner_engine_stop() {
     }
 }
 
+const RESUME_WINDOW: Duration = Duration::from_secs(30);
+
+fn age(since: SystemTime) -> Duration {
+    SystemTime::now().duration_since(since).unwrap_or_default()
+}
+
 async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>) {
     let cache = Cache::new(
         Some(settings.system_cache.as_str()),
@@ -405,6 +411,7 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
     };
 
     let mut failures = 0u32;
+    let mut resume: Option<(LoadRequest, SystemTime)> = None;
     loop {
         if session.is_invalid() {
             session = Session::new(session_config.clone(), cache.clone());
@@ -431,11 +438,22 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
         };
         failures = 0;
         let spirc = Arc::new(spirc);
+        let resuming = resume.take().filter(|(_, lost)| age(*lost) < RESUME_WINDOW);
+        if let Some((request, _)) = &resuming {
+            let _ = spirc.activate();
+            let _ = spirc.load(request.clone());
+        }
         publish(Some(spirc.clone()));
         bridge.emit("running", 0);
+        let connected = SystemTime::now();
         tokio::pin!(task);
         tokio::select! {
-            _ = &mut task => {
+            lost = &mut task => {
+                resume = match lost {
+                    Some(request) => Some((request, SystemTime::now())),
+                    None if age(connected) < RESUME_WINDOW => resuming,
+                    None => None,
+                };
                 publish(None);
                 bridge.emit("reconnecting", 0);
                 if !session.is_invalid() {
