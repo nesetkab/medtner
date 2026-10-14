@@ -51,7 +51,7 @@ enum LyricsSource {
             .init(name: "album_name", value: track.album?.name ?? ""),
             .init(name: "duration", value: String(track.duration_ms / 1000)),
         ]
-        if let record: Record = await load(exact.url), let lyrics = build(record, uri: track.uri) {
+        if let record: Record = await load(exact.url), let lyrics = build(record, uri: track.uri), covers(lyrics, track) {
             return lyrics
         }
         var search = URLComponents(string: "https://lrclib.net/api/search")!
@@ -61,10 +61,12 @@ enum LyricsSource {
         ]
         guard let records: [Record] = await load(search.url) else { return nil }
         let seconds = Double(track.duration_ms) / 1000
-        let sameLength = records
+        let candidates = records
             .filter { $0.syncedLyrics?.isEmpty == false && abs(($0.duration ?? .infinity) - seconds) <= 3 }
-            .min { abs(($0.duration ?? 0) - seconds) < abs(($1.duration ?? 0) - seconds) }
-        if let sameLength, let lyrics = build(sameLength, uri: track.uri) { return lyrics }
+            .sorted { abs(($0.duration ?? 0) - seconds) < abs(($1.duration ?? 0) - seconds) }
+        for candidate in candidates {
+            if let lyrics = build(candidate, uri: track.uri), covers(lyrics, track) { return lyrics }
+        }
         let plain = records.first { $0.plainLyrics?.isEmpty == false }
         return plain.flatMap { build(Record(syncedLyrics: nil, plainLyrics: $0.plainLyrics, instrumental: nil, duration: nil), uri: track.uri) }
     }
@@ -73,6 +75,11 @@ enum LyricsSource {
         guard let url, let (data, response) = try? await session.data(from: url),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    private static func covers(_ lyrics: Lyrics, _ track: Track) -> Bool {
+        guard lyrics.synced, let last = lyrics.lines.last else { return true }
+        return Double(last.time) >= Double(track.duration_ms) * 0.75
     }
 
     private static func build(_ record: Record, uri: String) -> Lyrics? {
