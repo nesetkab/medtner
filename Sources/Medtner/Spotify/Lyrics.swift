@@ -43,7 +43,7 @@ enum LyricsSource {
     }()
 
     static func fetch(for track: Track) async -> Lyrics? {
-        let artist = track.artists?.first?.name ?? track.artistLine
+        let artist = track.artistLine
         var exact = URLComponents(string: "https://lrclib.net/api/get")!
         exact.queryItems = [
             .init(name: "track_name", value: track.name),
@@ -54,18 +54,22 @@ enum LyricsSource {
         if let record: Record = await load(exact.url), let lyrics = build(record, uri: track.uri), covers(lyrics, track) {
             return lyrics
         }
-        var search = URLComponents(string: "https://lrclib.net/api/search")!
-        search.queryItems = [
-            .init(name: "track_name", value: track.name),
-            .init(name: "artist_name", value: artist),
-        ]
-        guard let records: [Record] = await load(search.url) else { return nil }
         let seconds = Double(track.duration_ms) / 1000
-        let candidates = records
-            .filter { $0.syncedLyrics?.isEmpty == false && abs(($0.duration ?? .infinity) - seconds) <= 3 }
-            .sorted { abs(($0.duration ?? 0) - seconds) < abs(($1.duration ?? 0) - seconds) }
-        for candidate in candidates {
-            if let lyrics = build(candidate, uri: track.uri), covers(lyrics, track) { return lyrics }
+        var records: [Record] = []
+        for name in [artist, track.artists?.first?.name].compactMap({ $0 }) {
+            var search = URLComponents(string: "https://lrclib.net/api/search")!
+            search.queryItems = [
+                .init(name: "track_name", value: track.name),
+                .init(name: "artist_name", value: name),
+            ]
+            let found: [Record] = await load(search.url) ?? []
+            let candidates = found
+                .filter { $0.syncedLyrics?.isEmpty == false && abs(($0.duration ?? .infinity) - seconds) <= 3 }
+                .sorted { abs(($0.duration ?? 0) - seconds) < abs(($1.duration ?? 0) - seconds) }
+            for candidate in candidates {
+                if let lyrics = build(candidate, uri: track.uri), covers(lyrics, track) { return lyrics }
+            }
+            records += found
         }
         let plain = records.first { $0.plainLyrics?.isEmpty == false }
         return plain.flatMap { build(Record(syncedLyrics: nil, plainLyrics: $0.plainLyrics, instrumental: nil, duration: nil), uri: track.uri) }
@@ -79,7 +83,7 @@ enum LyricsSource {
 
     private static func covers(_ lyrics: Lyrics, _ track: Track) -> Bool {
         guard lyrics.synced, let last = lyrics.lines.last else { return true }
-        return Double(last.time) >= Double(track.duration_ms) * 0.75
+        return Double(last.time) >= Double(track.duration_ms) * 0.88
     }
 
     private static func build(_ record: Record, uri: String) -> Lyrics? {
