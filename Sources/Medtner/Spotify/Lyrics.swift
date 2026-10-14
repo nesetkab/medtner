@@ -32,6 +32,7 @@ enum LyricsSource {
         let syncedLyrics: String?
         let plainLyrics: String?
         let instrumental: Bool?
+        let duration: Double?
     }
 
     private static let session: URLSession = {
@@ -59,8 +60,13 @@ enum LyricsSource {
             .init(name: "artist_name", value: artist),
         ]
         guard let records: [Record] = await load(search.url) else { return nil }
-        let best = records.first { $0.syncedLyrics?.isEmpty == false } ?? records.first { $0.plainLyrics?.isEmpty == false }
-        return best.flatMap { build($0, uri: track.uri) }
+        let seconds = Double(track.duration_ms) / 1000
+        let sameLength = records
+            .filter { $0.syncedLyrics?.isEmpty == false && abs(($0.duration ?? .infinity) - seconds) <= 3 }
+            .min { abs(($0.duration ?? 0) - seconds) < abs(($1.duration ?? 0) - seconds) }
+        if let sameLength, let lyrics = build(sameLength, uri: track.uri) { return lyrics }
+        let plain = records.first { $0.plainLyrics?.isEmpty == false }
+        return plain.flatMap { build(Record(syncedLyrics: nil, plainLyrics: $0.plainLyrics, instrumental: nil, duration: nil), uri: track.uri) }
     }
 
     private static func load<T: Decodable>(_ url: URL?) async -> T? {
