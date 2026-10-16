@@ -689,12 +689,26 @@ final class Player {
     }
 
     func playFromQueue(_ index: Int) {
-        if onEngine { engine.audio.interrupt() }
+        guard index < queue.count else { return }
         let count = index + 1
-        if index < queue.count { advanceQueue(past: queue[index].playURI) }
-        hold(0.6)
+        queue.removeSubrange(...index)
+        upNext.removeFirst(min(count, upNext.count))
+        queuedTracks.removeFirst(min(count, queuedTracks.count))
+        hold(30)
+        if engineInControl {
+            engine.audio.interrupt(for: 1.2)
+        } else if onEngine {
+            engine.audio.interrupt()
+        }
+        let skippedLocally = engineInControl ? (0..<count).prefix { _ in engine.next() }.count : 0
+        let remaining = count - skippedLocally
+        guard remaining > 0 else {
+            let held = holdUntil
+            Task { await settle(after: .milliseconds(600), releasing: held) }
+            return
+        }
         perform { [api] _ in
-            for _ in 0..<count { try await api.next() }
+            for _ in 0..<remaining { try await api.next() }
         }
     }
 
