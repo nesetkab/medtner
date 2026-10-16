@@ -157,6 +157,12 @@ struct Onboarding: View {
                 Text("brew install librespot")
                     .font(.system(size: 14, weight: .semibold, design: .monospaced))
                     .textSelection(.enabled)
+            } else if player.engineState == .off {
+                Text("The speaker didn't get approved. Try again and approve it in your browser.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color(white: 0.8))
+                    .frame(width: 420, alignment: .leading)
+                pill("Try again", enabled: true) { player.engine.restart() }
             } else {
                 Text("Medtner plays audio itself, so the Spotify app can stay closed. Approve the speaker once in your browser.")
                     .font(.system(size: 14, weight: .medium))
