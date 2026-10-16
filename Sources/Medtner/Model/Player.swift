@@ -54,7 +54,7 @@ final class Player {
     var track: Track?
     var isPlaying = false
     var durationMs = 1
-    var volume = 60
+    var volume = UserDefaults.standard.object(forKey: "engineVolume") as? Int ?? 60
     var shuffle = false
     var repeatMode: RepeatMode = .off
     var device: Device?
