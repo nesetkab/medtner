@@ -12,10 +12,11 @@ final class LoopbackServer {
         let listener = try NWListener(using: params)
         self.listener = listener
 
+        let queue = queue
         return try await withCheckedThrowingContinuation { continuation in
-            var finished = false
-            listener.newConnectionHandler = { [weak self] connection in
-                connection.start(queue: self?.queue ?? .main)
+            let finish = Once(continuation)
+            listener.newConnectionHandler = { connection in
+                connection.start(queue: queue)
                 connection.receive(minimumIncompleteLength: 1, maximumLength: 16_384) { data, _, _, _ in
                     guard
                         let data,
@@ -36,17 +37,15 @@ final class LoopbackServer {
                     connection.send(content: response.data(using: .utf8), completion: .contentProcessed { _ in
                         connection.cancel()
                     })
-                    if !finished {
-                        finished = true
-                        listener.cancel()
-                        continuation.resume(returning: components)
-                    }
+                    listener.cancel()
+                    finish(.success(components))
                 }
             }
             listener.stateUpdateHandler = { state in
-                if case .failed(let error) = state, !finished {
-                    finished = true
-                    continuation.resume(throwing: error)
+                switch state {
+                case .failed(let error): finish(.failure(error))
+                case .cancelled: finish(.failure(CancellationError()))
+                default: break
                 }
             }
             listener.start(queue: queue)
@@ -55,5 +54,22 @@ final class LoopbackServer {
 
     func cancel() {
         listener?.cancel()
+    }
+}
+
+private final class Once: @unchecked Sendable {
+    private var continuation: CheckedContinuation<URLComponents, Error>?
+    private let lock = NSLock()
+
+    init(_ continuation: CheckedContinuation<URLComponents, Error>) {
+        self.continuation = continuation
+    }
+
+    func callAsFunction(_ result: Result<URLComponents, Error>) {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
     }
 }
