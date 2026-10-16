@@ -77,7 +77,8 @@ final class Engine {
             self?.handleBuiltin(from: source, name, value, at: at)
         }
         self.bridge = bridge
-        let context = Unmanaged.passUnretained(bridge).toOpaque()
+        let retained = Unmanaged.passRetained(bridge)
+        let context = retained.toOpaque()
         let logPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Logs/Medtner/engine.log").path
         let started = Self.deviceName.withCString { name in
@@ -101,10 +102,12 @@ final class Engine {
                         event: { context, event, value in
                             guard let context, let event else { return }
                             let name = String(cString: event)
-                            let bridge = Unmanaged<EngineBridge>.fromOpaque(context).takeUnretainedValue()
+                            let unmanaged = Unmanaged<EngineBridge>.fromOpaque(context)
+                            let bridge = unmanaged.takeUnretainedValue()
                             let at = Date().timeIntervalSince1970
                             bridge.react(to: name)
                             DispatchQueue.main.async { bridge.handle(name, value, at: at) }
+                            if name == "exited" { unmanaged.release() }
                         },
                         context: context
                     )
@@ -114,6 +117,7 @@ final class Engine {
             }
         }
         guard started else {
+            retained.release()
             self.bridge = nil
             startExternal()
             return

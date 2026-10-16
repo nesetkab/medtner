@@ -1,6 +1,8 @@
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Once};
+use std::io::Write;
+use std::net::{SocketAddr, TcpStream};
+use std::sync::{Arc, Mutex, Once, RwLock};
 use std::time::{Duration, SystemTime};
 
 use librespot_connect::{ConnectConfig, LoadRequest, LoadRequestOptions, Spirc};
@@ -40,11 +42,12 @@ pub struct MedtnerEngineConfig {
     pub context: *mut c_void,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct Bridge {
     audio: AudioCallback,
     event: EventCallback,
     context: *mut c_void,
+    open: Arc<RwLock<bool>>,
 }
 
 unsafe impl Send for Bridge {}
@@ -52,6 +55,25 @@ unsafe impl Sync for Bridge {}
 
 impl Bridge {
     fn emit(&self, name: &str, value: i64) {
+        let open = self.open.read().unwrap_or_else(|e| e.into_inner());
+        if *open {
+            self.send_event(name, value);
+        }
+    }
+
+    fn push(&self, samples: &[f32]) {
+        let open = self.open.read().unwrap_or_else(|e| e.into_inner());
+        if *open {
+            (self.audio)(self.context, samples.as_ptr(), samples.len());
+        }
+    }
+
+    fn close_with(&self, name: &str) {
+        *self.open.write().unwrap_or_else(|e| e.into_inner()) = false;
+        self.send_event(name, 0);
+    }
+
+    fn send_event(&self, name: &str, value: i64) {
         if let Ok(text) = CString::new(name) {
             (self.event)(self.context, text.as_ptr(), value);
         }
@@ -78,7 +100,7 @@ impl Sink for BridgeSink {
         if let AudioPacket::Samples(samples) = packet {
             self.scratch.clear();
             self.scratch.extend(samples.iter().map(|sample| *sample as f32));
-            (self.bridge.audio)(self.bridge.context, self.scratch.as_ptr(), self.scratch.len());
+            self.bridge.push(&self.scratch);
         }
         Ok(())
     }
@@ -101,7 +123,6 @@ impl log::Log for FileLog {
         }
         let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs_f64()).unwrap_or(0.0);
         if let Ok(mut file) = self.file.lock() {
-            use std::io::Write;
             let _ = writeln!(file, "{stamp:.3} {} {}: {}", record.level(), record.target(), record.args());
         }
     }
@@ -249,7 +270,12 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
     }
     let config = unsafe { &*config };
     start_log(&string(config.log_path));
-    let bridge = Bridge { audio: config.audio, event: config.event, context: config.context };
+    let bridge = Bridge {
+        audio: config.audio,
+        event: config.event,
+        context: config.context,
+        open: Arc::new(RwLock::new(true)),
+    };
     let settings = Settings {
         name: string(config.name),
         system_cache: string(config.system_cache),
@@ -281,13 +307,13 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
             Ok(runtime) => runtime,
             Err(_) => {
                 bridge.emit("failed", 0);
-                finish(bridge);
+                finish(&bridge);
                 return;
             }
         };
-        runtime.block_on(run(settings, bridge, stop_rx));
+        runtime.block_on(run(settings, bridge.clone(), stop_rx));
         runtime.shutdown_timeout(Duration::from_secs(2));
-        finish(bridge);
+        finish(&bridge);
     });
     if spawned.is_err() {
         RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take();
@@ -297,11 +323,11 @@ pub extern "C" fn medtner_engine_start(config: *const MedtnerEngineConfig) -> bo
     true
 }
 
-fn finish(bridge: Bridge) {
+fn finish(bridge: &Bridge) {
     publish(None);
     RUNNING.lock().unwrap_or_else(|e| e.into_inner()).take();
     ALIVE.store(false, Ordering::SeqCst);
-    bridge.emit("exited", 0);
+    bridge.close_with("exited");
 }
 
 #[no_mangle]
@@ -313,6 +339,18 @@ pub extern "C" fn medtner_engine_stop() {
 }
 
 const RESUME_WINDOW: Duration = Duration::from_secs(30);
+const LOGIN_ADDRESS: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 5588);
+
+async fn release_login_port<T>(login: &mut tokio::task::JoinHandle<T>) {
+    for _ in 0..20 {
+        if let Ok(mut stream) = TcpStream::connect_timeout(&LOGIN_ADDRESS, Duration::from_millis(200)) {
+            let _ = stream.write_all(b"GET /cancel HTTP/1.1\r\n\r\n");
+        }
+        if tokio::time::timeout(Duration::from_millis(100), &mut *login).await.is_ok() {
+            return;
+        }
+    }
+}
 
 fn age(since: SystemTime) -> Duration {
     SystemTime::now().duration_since(since).unwrap_or_default()
@@ -338,8 +376,8 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
         None => {
             bridge.emit("needs_login", 0);
             let client_id = session_config.client_id.clone();
-            let login = tokio::task::spawn_blocking(move || {
-                OAuthClientBuilder::new(&client_id, "http://127.0.0.1:5588/login", SCOPES.to_vec())
+            let mut login = tokio::task::spawn_blocking(move || {
+                OAuthClientBuilder::new(&client_id, &format!("http://{LOGIN_ADDRESS}/login"), SCOPES.to_vec())
                     .open_in_browser()
                     .build()
                     .ok()?
@@ -347,8 +385,11 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
                     .ok()
             });
             let token = tokio::select! {
-                token = login => token.ok().flatten(),
-                _ = &mut stop => return,
+                token = &mut login => token.ok().flatten(),
+                _ = &mut stop => {
+                    release_login_port(&mut login).await;
+                    return;
+                }
             };
             match token {
                 Some(token) => Credentials::with_access_token(token.access_token),
@@ -376,13 +417,13 @@ async fn run(settings: Settings, bridge: Bridge, mut stop: oneshot::Receiver<()>
     };
 
     let mut session = Session::new(session_config.clone(), cache.clone());
-    let sink_bridge = bridge;
+    let sink_bridge = bridge.clone();
     let player = Player::new(player_config, session.clone(), Box::new(NoOpVolume), move || {
-        Box::new(BridgeSink { bridge: sink_bridge, scratch: Vec::with_capacity(8192) })
+        Box::new(BridgeSink { bridge: sink_bridge.clone(), scratch: Vec::with_capacity(8192) })
     });
 
     let mut events = player.get_player_event_channel();
-    let event_bridge = bridge;
+    let event_bridge = bridge.clone();
     tokio::spawn(async move {
         while let Some(event) = events.recv().await {
             match event {
