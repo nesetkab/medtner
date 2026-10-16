@@ -242,6 +242,7 @@ final class Player {
         engine.resetLogin()
         loop?.cancel()
         loop = nil
+        resumeWake()
         track = nil
         await resolvePhase()
     }
