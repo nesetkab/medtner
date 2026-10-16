@@ -119,7 +119,7 @@ final class StatusItemController: NSObject, NSMenuDelegate {
         glyph.update(playing: player.isPlaying, accent: player.accent)
         item.length = StatusGlyph.width
         item.button?.toolTip = player.track.map { "\($0.name) — \($0.artistLine)" } ?? "Medtner"
-        _ = (player.artwork, player.volume, player.shuffle, player.repeatMode, player.durationMs, player.lyricIndex, player.lyrics)
+        _ = (player.artwork, player.volume, player.shuffle, player.repeatMode, player.durationMs, player.lyricIndex, player.lyrics, player.progressEpoch)
         guard isOpen else { return }
         nowPlaying.needsDisplay = true
         transport.sync()
