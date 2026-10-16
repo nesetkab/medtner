@@ -338,8 +338,14 @@ final class Engine {
             let text = try? String(contentsOf: pidFile, encoding: .utf8),
             let pid = pid_t(text.trimmingCharacters(in: .whitespacesAndNewlines))
         else { return }
-        kill(pid, SIGTERM)
+        if Self.executableName(of: pid) == "librespot" { kill(pid, SIGTERM) }
         try? FileManager.default.removeItem(at: pidFile)
+    }
+
+    private static func executableName(of pid: pid_t) -> String? {
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { return nil }
+        return URL(fileURLWithPath: String(cString: path)).lastPathComponent
     }
 
     nonisolated static func handleHookInvocation() -> Bool {
