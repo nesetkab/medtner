@@ -76,11 +76,11 @@ struct API {
     }
 
     func removeFromLibrary(_ uris: [String]) async throws {
-        try await send("DELETE", "me/library", body: ["uris": uris])
+        try await send("DELETE", "me/library", query: ["uris": uris.joined(separator: ",")])
     }
 
     func saveToLibrary(_ uris: [String]) async throws {
-        try await send("PUT", "me/library", body: ["uris": uris])
+        try await send("PUT", "me/library", query: ["uris": uris.joined(separator: ",")])
     }
 
     func search(_ text: String) async throws -> SearchResponse? {
