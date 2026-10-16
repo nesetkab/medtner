@@ -197,7 +197,7 @@ final class AudioOut: @unchecked Sendable {
         let bytesPerChunk = framesPerChunk * 4
         var chunk = Data(count: bytesPerChunk)
         while true {
-            slots.wait()
+            let slot = takeSlot()
             var filled = 0
             var ended = false
             chunk.withUnsafeMutableBytes { raw in
@@ -220,8 +220,8 @@ final class AudioOut: @unchecked Sendable {
             let dropping = gated
             lock.unlock()
             let usable = filled - filled % 4
-            guard !stale, !dropping, usable > 0, let (buffer, levels) = convert(chunk.prefix(usable)) else {
-                slots.signal()
+            guard slot, !stale, !dropping, usable > 0, let (buffer, levels) = convert(chunk.prefix(usable)) else {
+                if slot { slots.signal() }
                 if ended || stale {
                     try? handle.close()
                     return
@@ -263,8 +263,7 @@ final class AudioOut: @unchecked Sendable {
         lock.lock()
         let wasDraining = draining
         lock.unlock()
-        guard !wasDraining else { return }
-        slots.wait()
+        guard !wasDraining, takeSlot() else { return }
         lock.lock()
         if gated, Date() > gateDeadline { gated = false }
         let dropping = gated || draining
@@ -284,6 +283,17 @@ final class AudioOut: @unchecked Sendable {
             }
         }
         schedule(buffer, levels: levels(left, right, frames: frames))
+    }
+
+    private func takeSlot() -> Bool {
+        while slots.wait(timeout: .now() + 0.25) == .timedOut {
+            lock.lock()
+            let giveUp = held || draining
+            lock.unlock()
+            if giveUp { return false }
+            ensureRunning()
+        }
+        return true
     }
 
     private func schedule(_ buffer: AVAudioPCMBuffer, levels: [Float]) {
@@ -371,6 +381,10 @@ final class AudioOut: @unchecked Sendable {
     }
 
     private func ensureRunning() {
+        control.sync(execute: startIfNeeded)
+    }
+
+    private func startIfNeeded() {
         lock.lock()
         let isHeld = held
         idleWork?.cancel()
@@ -397,7 +411,7 @@ final class AudioOut: @unchecked Sendable {
         idleWork?.cancel()
         idleWork = work
         lock.unlock()
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 6, execute: work)
+        control.asyncAfter(deadline: .now() + 6, execute: work)
     }
 
     private func beginActivity() {
@@ -418,9 +432,11 @@ final class AudioOut: @unchecked Sendable {
     }
 
     private func restart() {
-        engine.stop()
-        engine.connect(node, to: engine.mainMixerNode, format: format)
-        ensureRunning()
+        control.async {
+            self.engine.stop()
+            self.engine.connect(self.node, to: self.engine.mainMixerNode, format: self.format)
+            self.startIfNeeded()
+        }
     }
 }
 
