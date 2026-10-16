@@ -126,8 +126,9 @@ final class BlobView: NSView {
         reactive = false
         startIdlePulse(calm: false)
         watchdog?.invalidate()
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
-            guard let self, self.reactive, Date().timeIntervalSince(self.lastLevels) > 0.6 else { return }
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self else { return timer.invalidate() }
+            guard self.reactive, Date().timeIntervalSince(self.lastLevels) > 0.6 else { return }
             self.reactive = false
             self.startIdlePulse(calm: false)
         }
@@ -151,9 +152,13 @@ final class BlobView: NSView {
         }
     }
 
-    private func rest() {
+    func stopWatchdog() {
         watchdog?.invalidate()
         watchdog = nil
+    }
+
+    private func rest() {
+        stopWatchdog()
         reactive = false
         if container.animation(forKey: "drift") == nil {
             let drift = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -196,6 +201,7 @@ struct AmbientBlobs: NSViewRepresentable {
 
     static func dismantleNSView(_ view: BlobView, coordinator: ()) {
         view.stopListening?()
+        view.stopWatchdog()
     }
 
     func updateNSView(_ view: BlobView, context: Context) {

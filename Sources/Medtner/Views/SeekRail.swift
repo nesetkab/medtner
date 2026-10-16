@@ -92,7 +92,10 @@ final class RailLayerView: NSView {
         bubbleTimer = nil
         if visible {
             refreshBubble()
-            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.refreshBubble() }
+            let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] timer in
+                guard let self else { return timer.invalidate() }
+                self.refreshBubble()
+            }
             timer.tolerance = 0.1
             RunLoop.main.add(timer, forMode: .common)
             bubbleTimer = timer
@@ -330,6 +333,7 @@ struct RailLayer: NSViewRepresentable {
 
     static func dismantleNSView(_ view: RailLayerView, coordinator: ()) {
         view.stopListening?()
+        view.showTime(false)
     }
 }
 
