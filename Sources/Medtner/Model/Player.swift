@@ -374,7 +374,7 @@ final class Player {
         }
     }
 
-    private func adopt(_ item: Track) {
+    private func adopt(_ item: Track, refreshQueueAfter delay: Duration = .zero) {
         withAnimation(.easeOut(duration: 0.8)) { track = item }
         loadArtwork()
         loadLyrics()
@@ -384,8 +384,11 @@ final class Player {
             let result = (try? await api.libraryContains([uri]))?.first ?? false
             if track?.uri == uri { liked = result }
         }
-        Task { await loadUpNext() }
-        if shelfMode == .queue { Task { await loadShelf() } }
+        Task {
+            try? await Task.sleep(for: delay)
+            await loadUpNext()
+            if shelfMode == .queue { await loadShelf() }
+        }
     }
 
     private func engineTrack(_ item: Track) {
@@ -583,13 +586,11 @@ final class Player {
         if let uri = queuedTracks.first?.uri ?? queue.first?.playURI { advanceQueue(past: uri) }
         if let upcoming = queuedTracks.first {
             queuedTracks.removeFirst()
-            withAnimation(.easeOut(duration: 0.5)) { track = upcoming }
+            adopt(upcoming, refreshQueueAfter: .seconds(1.5))
             durationMs = max(upcoming.duration_ms, 1)
             progressMs = 0
             progressStamp = Date()
             progressEpoch &+= 1
-            loadArtwork()
-            loadLyrics()
         }
         command(engine.next, confirmedBy: ["track_changed"]) { try await $0.next() }
     }
