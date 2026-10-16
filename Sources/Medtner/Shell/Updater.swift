@@ -75,18 +75,18 @@ final class Updater {
                 try Self.run("/usr/bin/ditto", ["-x", "-k", zip.path, staging.path])
                 let fresh = staging.appendingPathComponent("Medtner.app")
                 try Self.run("/usr/bin/codesign", ["--verify", "--deep", fresh.path])
-                let target = Bundle.main.bundleURL.path
                 let script = """
-                while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
-                rm -rf "\(target).new"
-                /usr/bin/ditto "\(fresh.path)" "\(target).new" && rm -rf "\(target)" && mv "\(target).new" "\(target)"
-                /usr/bin/xattr -dr com.apple.quarantine "\(target)" 2>/dev/null
-                /usr/bin/open "\(target)"
-                rm -rf "\(staging.path)"
+                while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
+                rm -rf "$2.new"
+                /usr/bin/ditto "$3" "$2.new" && rm -rf "$2" && mv "$2.new" "$2"
+                /usr/bin/xattr -dr com.apple.quarantine "$2" 2>/dev/null
+                /usr/bin/open "$2"
+                rm -rf "$4"
                 """
                 let swap = Process()
                 swap.executableURL = URL(fileURLWithPath: "/bin/sh")
-                swap.arguments = ["-c", script]
+                swap.arguments = ["-c", script, "sh", String(ProcessInfo.processInfo.processIdentifier),
+                                  Bundle.main.bundleURL.path, fresh.path, staging.path]
                 try swap.run()
                 NSApp.terminate(nil)
             } catch {
