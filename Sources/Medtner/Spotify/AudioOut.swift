@@ -393,7 +393,7 @@ final class AudioOut: @unchecked Sendable {
         guard !isHeld else { return }
         if !engine.isRunning {
             engine.prepare()
-            try? engine.start()
+            guard (try? engine.start()) != nil else { return }
             beginActivity()
         }
         if !node.isPlaying { node.play() }
