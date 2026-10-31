@@ -138,7 +138,7 @@ impl ConnectState {
     }
 
     pub fn valid_resolve_uri(uri: &str) -> Option<&str> {
-        if uri.is_empty() || uri.starts_with(SEARCH_IDENTIFIER) {
+        if uri.is_empty() || uri.starts_with(SEARCH_IDENTIFIER) || uri == "spotify:web-api" {
             None
         } else {
             Some(uri)

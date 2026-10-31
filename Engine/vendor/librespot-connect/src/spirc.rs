@@ -600,11 +600,14 @@ impl SpircTask {
             playing_track: Some(PlayingTrack::Uri(track.uri.clone())),
         };
         let context = self.connect_state.context_uri();
-        Some(if track.is_context() && !context.is_empty() {
-            LoadRequest::from_context_uri(context.clone(), options)
+        let resumable_context =
+            track.is_context() && !context.is_empty() && context != "spotify:web-api";
+        let uri = if resumable_context {
+            context.clone()
         } else {
-            LoadRequest::from_tracks(vec![track.uri], options)
-        })
+            track.uri
+        };
+        Some(LoadRequest::from_context_uri(uri, options))
     }
 
     fn handle_next_context(&mut self, next_context: Result<Context, Error>) -> bool {
