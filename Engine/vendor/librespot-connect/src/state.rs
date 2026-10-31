@@ -398,6 +398,11 @@ impl ConnectState {
         let new_index = new_index.unwrap_or(0);
         self.update_current_index(|i| i.track = new_index as u32);
         self.update_context_index(self.active_context, new_index + 1)?;
+        if let ContextType::Default = self.active_context {
+            if let Ok(autoplay) = self.get_context_mut(ContextType::Autoplay) {
+                autoplay.index.track = 0;
+            }
+        }
         self.fill_up_context = self.active_context;
 
         if !self.current_track(|t| t.is_queue() || self.is_skip_track(t, None)) {
